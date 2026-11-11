@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Builds MyBooks.app into macos/dist. Requires Shared.xcframework in macos/.
+# Builds macos/dist/MyBooks.app from Sources/MyBooks using the shared Kotlin framework.
+# Requires Shared.framework (produced by the macOS CI workflow) in this directory.
 set -euo pipefail
 cd "$(dirname "$0")"
-
-CONFIG="${1:-release}"
 
 if [ ! -d "Shared.framework" ]; then
   echo "Shared.framework not found."
@@ -11,14 +10,33 @@ if [ ! -d "Shared.framework" ]; then
   exit 1
 fi
 
-swift build -c "$CONFIG" --product MyBooks
-BIN_PATH="$(swift build -c "$CONFIG" --show-bin-path)/MyBooks"
+mkdir -p .build
+mapfile -t SRC < <(find Sources/MyBooks -name '*.swift' | sort)
+echo "Sources: ${#SRC[@]} files"
+
+build_arch() {
+  local arch="$1"
+  local out="$2"
+  swiftc -O -swift-version 5 -parse-as-library \
+    -target "${arch}-apple-macos14.0" \
+    -F . -framework Shared \
+    -o "$out" "${SRC[@]}"
+}
+
+build_arch arm64 .build/MyBooks-arm64
+
+if build_arch x86_64 .build/MyBooks-x64; then
+  lipo -create .build/MyBooks-arm64 .build/MyBooks-x64 -output .build/MyBooks
+else
+  echo "x86_64 slice failed, building arm64 only"
+  cp .build/MyBooks-arm64 .build/MyBooks
+fi
 
 APP="dist/MyBooks.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN_PATH" "$APP/Contents/MacOS/MyBooks"
+cp .build/MyBooks "$APP/Contents/MacOS/MyBooks"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
-codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
+codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || echo "codesign skipped"
 
 echo "Built $APP"
