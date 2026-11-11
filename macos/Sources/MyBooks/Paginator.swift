@@ -53,7 +53,6 @@ enum Paginator {
 
         var size = CGFloat(settings.fontSize)
         var weight: NSFont.Weight = .regular
-        var color = NSColor(hex: palette.text)
 
         switch kind {
         case "HEADING1":
@@ -72,23 +71,18 @@ enum Paginator {
             paragraph.paragraphSpacing = size * 0.4
         case "SUBTITLE":
             weight = .medium
-            color = NSColor(hex: palette.secondary)
             paragraph.paragraphSpacing = size * 0.3
         case "EPIGRAPH":
             size *= 0.92
-            color = NSColor(hex: palette.secondary)
             paragraph.headIndent = size * 1.2
             paragraph.firstLineHeadIndent = size * 1.2
         case "EPIGRAPH_AUTHOR":
             size *= 0.88
-            color = NSColor(hex: palette.secondary)
             paragraph.alignment = .right
         case "POEM":
             size *= 0.95
             paragraph.firstLineHeadIndent = size * 1.4
             paragraph.headIndent = size * 1.4
-        case "ANNOTATION":
-            color = NSColor(hex: palette.secondary)
         case "PARAGRAPH":
             paragraph.firstLineHeadIndent = size * 1.1
             paragraph.paragraphSpacing = size * 0.45
@@ -97,10 +91,11 @@ enum Paginator {
         }
 
         let font = Self.font(family: settings.fontFamily, size: size, weight: weight)
+        // No .foregroundColor here: SwiftUI ignores AppKit colours from AttributedString,
+        // the view applies the palette colour per block kind instead.
         return [
             .font: font,
             .paragraphStyle: paragraph,
-            .foregroundColor: color,
         ]
     }
 

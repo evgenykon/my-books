@@ -1,4 +1,5 @@
 import Foundation
+import Shared
 
 struct BookRecord: Codable, Identifiable, Hashable {
     var id: String
@@ -237,6 +238,6 @@ final class LibraryStore: ObservableObject {
 /// Small wrapper so the Swift side never touches the Kotlin class names directly.
 enum Fb2Bridge {
     static func parse(data: NSData) -> Book {
-        BridgeNativeKt.parseBookData(data: data)
+        BridgeNativeKt.parseBookData(data: data as Data)
     }
 }

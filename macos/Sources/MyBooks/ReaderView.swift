@@ -106,8 +106,16 @@ struct ReaderView: View {
             Spacer(minLength: 12)
 
             if !pages.isEmpty {
-                HStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    Button { previousPage() } label: { Image(systemName: "chevron.left") }
+                        .buttonStyle(.borderless)
+                        .disabled(pageIndex == 0)
+                        .help("Предыдущая страница")
                     Text("стр. \(pageIndex + 1) из \(pages.count)")
+                    Button { nextPage() } label: { Image(systemName: "chevron.right") }
+                        .buttonStyle(.borderless)
+                        .disabled(pageIndex + 1 >= pages.count)
+                        .help("Следующая страница")
                     Text("\(percent)%")
                         .fontWeight(.medium)
                 }
@@ -190,6 +198,7 @@ struct ReaderView: View {
         }.value
         pages = result
         isPaginating = false
+        DebugLog.log("pagination: size=\(Int(size.width))x\(Int(size.height)) pages=\(result.count) font=\(current.fontSize)")
         if result.isEmpty { return }
         if restored {
             pageIndex = Paginator.pageIndex(pages: result, forBlock: anchorBlock)
@@ -211,15 +220,17 @@ struct ReaderView: View {
         .padding(.horizontal, settings.marginH)
         .padding(.vertical, settings.marginV)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 30).onEnded { value in
-                if value.translation.width < -50 {
+        .background(
+            PagingEventBridge(
+                onNext: {
+                    DebugLog.log("input: next")
                     nextPage()
-                } else if value.translation.width > 50 {
+                },
+                onPrevious: {
+                    DebugLog.log("input: previous")
                     previousPage()
                 }
-            }
+            )
         )
     }
 
