@@ -18,9 +18,15 @@ struct LibraryView: View {
             } else {
                 List {
                     ForEach(store.books) { book in
-                        BookRow(record: book, noteCount: store.notes(for: book.id).count)
-                            .contentShape(Rectangle())
-                            .onTapGesture { onOpen(book) }
+                        BookRow(
+                            record: book,
+                            noteCount: store.notes(for: book.id).count,
+                            onOpen: { onOpen(book) },
+                            onDelete: {
+                                DebugLog.log("delete: requested for \(book.title)")
+                                pendingDelete = book
+                            }
+                        )
                             .contextMenu {
                                 Button("Открыть") { onOpen(book) }
                                 Button("Удалить", role: .destructive) { pendingDelete = book }
@@ -49,16 +55,19 @@ struct LibraryView: View {
         .onReceive(NotificationCenter.default.publisher(for: .myBooksImport)) { _ in
             importing = true
         }
-        .confirmationDialog(
+        .alert(
             "Удалить книгу?",
-            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
-            titleVisibility: .visible
+            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })
         ) {
+            Button("Отмена", role: .cancel) { pendingDelete = nil }
             Button("Удалить", role: .destructive) {
-                if let book = pendingDelete { store.delete(book) }
+                if let book = pendingDelete {
+                    DebugLog.log("delete: confirmed \(book.title)")
+                    store.delete(book)
+                    DebugLog.log("delete: done, books=\(store.books.count) error=\(store.lastError ?? "-")")
+                }
                 pendingDelete = nil
             }
-            Button("Отмена", role: .cancel) { pendingDelete = nil }
         } message: {
             Text("Книга и все заметки к ней будут удалены.")
         }
@@ -109,47 +118,61 @@ struct LibraryView: View {
 private struct BookRow: View {
     let record: BookRecord
     let noteCount: Int
+    var onOpen: () -> Void = {}
     var onDelete: () -> Void = {}
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color(nsColor: NSColor(hex: "#E8E2D6")))
-                Text(initials)
-                    .font(.system(size: 15, weight: .semibold, design: .serif))
-                    .foregroundStyle(Color.black.opacity(0.55))
-            }
-            .frame(width: 38, height: 52)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(record.title).font(.system(size: 14, weight: .medium)).lineLimit(1)
-                Text(record.author).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
-                HStack(spacing: 8) {
-                    ProgressView(value: Double(record.percent), total: 100)
-                        .frame(width: 120)
-                    Text("\(record.percent)%").font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
-                    if noteCount > 0 {
-                        Label("\(noteCount)", systemImage: "note.text")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    }
+            Button(action: onOpen) {
+                HStack(alignment: .center, spacing: 14) {
+                    cover
+                    info
                 }
-                .padding(.top, 2)
+                .contentShape(Rectangle())
             }
-            Spacer()
+            .buttonStyle(.plain)
 
-            Button {
-                onDelete()
-            } label: {
+            Spacer(minLength: 0)
+
+            Button(action: onDelete) {
                 Image(systemName: "trash")
                     .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
             .help("Удалить книгу")
-            .opacity(1)
         }
         .padding(.vertical, 8)
+    }
+
+    private var cover: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 4)
+                .fill(Color(nsColor: NSColor(hex: "#E8E2D6")))
+            Text(initials)
+                .font(.system(size: 15, weight: .semibold, design: .serif))
+                .foregroundStyle(Color.black.opacity(0.55))
+        }
+        .frame(width: 38, height: 52)
+    }
+
+    private var info: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(record.title).font(.system(size: 14, weight: .medium)).lineLimit(1)
+            Text(record.author).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+            HStack(spacing: 8) {
+                ProgressView(value: Double(record.percent), total: 100)
+                    .frame(width: 120)
+                Text("\(record.percent)%").font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
+                if noteCount > 0 {
+                    Label("\(noteCount)", systemImage: "note.text")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.top, 2)
+        }
     }
 
     private var initials: String {
