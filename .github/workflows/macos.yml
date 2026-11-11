@@ -28,15 +28,17 @@ jobs:
       - name: Build Kotlin/Native frameworks
         run: gradle --no-daemon :shared:linkReleaseFrameworkMacosArm64 :shared:linkReleaseFrameworkMacosX64
 
-      - name: Assemble XCFramework
+      - name: Assemble universal framework
         run: |
           ARM="$(find shared/build -type d -name 'Shared.framework' -path '*macosArm64*' | head -1)"
           INTEL="$(find shared/build -type d -name 'Shared.framework' -path '*macosX64*' | head -1)"
           echo "arm64: $ARM"
           echo "x64:   $INTEL"
           test -n "$ARM" && test -n "$INTEL"
-          rm -rf macos/Shared.xcframework
-          xcodebuild -create-xcframework -framework "$ARM" -framework "$INTEL" -output macos/Shared.xcframework
+          rm -rf macos/Shared.framework
+          cp -R "$ARM" macos/Shared.framework
+          lipo -create "$ARM/Shared" "$INTEL/Shared" -output macos/Shared.framework/Shared
+          lipo -info macos/Shared.framework/Shared
 
       - name: Build app bundle
         run: chmod +x macos/build.sh && ./macos/build.sh release
@@ -55,6 +57,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: shared-xcframework
-          path: macos/Shared.xcframework
+          name: shared-framework
+          path: macos/Shared.framework
           if-no-files-found: warn

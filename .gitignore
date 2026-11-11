@@ -6,7 +6,8 @@ local.properties
 .DS_Store
 .kotlin/
 xcuserdata/
-*.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+macos/Shared.framework/
 macos/Shared.xcframework/
 macos/.build/
+macos/dist/
 dist/

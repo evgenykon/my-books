@@ -5,7 +5,8 @@ let package = Package(
     name: "MyBooks",
     platforms: [.macOS(.v14)],
     targets: [
-        .binaryTarget(name: "Shared", path: "Shared.xcframework"),
+        // Universal Kotlin/Native framework produced by the macOS CI workflow.
+        .binaryTarget(name: "Shared", path: "Shared.framework"),
         .executableTarget(
             name: "MyBooks",
             dependencies: ["Shared"],

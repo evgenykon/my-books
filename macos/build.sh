@@ -5,9 +5,9 @@ cd "$(dirname "$0")"
 
 CONFIG="${1:-release}"
 
-if [ ! -d "Shared.xcframework" ]; then
-  echo "Shared.xcframework not found."
-  echo "Build it with: gradle :shared:assembleSharedReleaseXCFramework, then copy the result here."
+if [ ! -d "Shared.framework" ]; then
+  echo "Shared.framework not found."
+  echo "Download it from the 'macOS' workflow artifacts (shared-framework) and place it here."
   exit 1
 fi
 
