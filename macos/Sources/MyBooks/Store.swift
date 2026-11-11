@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import Shared
 
 struct BookRecord: Codable, Identifiable, Hashable {
@@ -12,6 +13,8 @@ struct BookRecord: Codable, Identifiable, Hashable {
     var blockCount: Int = 0
     var addedAt: Double = 0
     var lastOpenedAt: Double = 0
+    /// SHA-256 of the source file, used to keep the library free of duplicates.
+    var fingerprint: String? = nil
 }
 
 struct ReaderNote: Codable, Identifiable, Hashable {
@@ -95,6 +98,7 @@ final class LibraryStore: ObservableObject {
         settingsFile = root.appendingPathComponent("reader-settings.json")
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         load()
+        deduplicateLibrary()
     }
 
     // MARK: - Persistence
@@ -148,14 +152,34 @@ final class LibraryStore: ObservableObject {
         root.appendingPathComponent(record.fileName)
     }
 
-    func importBook(at url: URL) {
+    static func sha256(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func storedFingerprint(of record: BookRecord) -> String? {
+        if let value = record.fingerprint, !value.isEmpty { return value }
+        guard let data = try? Data(contentsOf: fileURL(for: record)) else { return nil }
+        return Self.sha256(data)
+    }
+
+    /// Imports a book unless an identical file is already in the library.
+    @discardableResult
+    func importBook(at url: URL) -> BookRecord? {
         do {
             let data = try Data(contentsOf: url)
+            let hash = Self.sha256(data)
+            if let index = books.firstIndex(where: { storedFingerprint(of: $0) == hash }) {
+                books[index].lastOpenedAt = Date().timeIntervalSince1970
+                let existing = books[index]
+                saveBooks()
+                DebugLog.log("import: duplicate detected, reusing \(existing.title)")
+                return existing
+            }
             let book = Fb2Bridge.parse(data: data as NSData)
             let id = UUID().uuidString
             let fileName = "\(id).fb2"
             try data.write(to: root.appendingPathComponent(fileName), options: .atomic)
-            let record = BookRecord(
+            var record = BookRecord(
                 id: id,
                 title: book.title.isEmpty ? (url.deletingPathExtension().lastPathComponent) : book.title,
                 author: book.authorLine,
@@ -167,11 +191,41 @@ final class LibraryStore: ObservableObject {
                 addedAt: Date().timeIntervalSince1970,
                 lastOpenedAt: Date().timeIntervalSince1970
             )
+            record.fingerprint = hash
             books.insert(record, at: 0)
             saveBooks()
+            return record
         } catch {
             lastError = "Не удалось открыть файл: \(error.localizedDescription)"
+            return nil
         }
+    }
+
+    /// Removes duplicates that slipped in earlier, keeping the most-read copy.
+    func deduplicateLibrary() {
+        var seen: [String: Int] = [:]
+        var toRemove: [Int] = []
+        for (index, record) in books.enumerated() {
+            guard let hash = storedFingerprint(of: record) else { continue }
+            if let firstIndex = seen[hash] {
+                let keep = books[firstIndex].percent >= record.percent ? firstIndex : index
+                let drop = keep == firstIndex ? index : firstIndex
+                seen[hash] = keep
+                if !toRemove.contains(drop) { toRemove.append(drop) }
+            } else {
+                seen[hash] = index
+            }
+        }
+        guard !toRemove.isEmpty else { return }
+        for index in toRemove.sorted(by: >) {
+            let record = books[index]
+            try? FileManager.default.removeItem(at: fileURL(for: record))
+            notes.removeAll { $0.bookId == record.id }
+            books.remove(at: index)
+        }
+        saveBooks()
+        saveNotes()
+        DebugLog.log("library: removed \(toRemove.count) duplicate(s)")
     }
 
     func loadBook(_ record: BookRecord) -> Book? {

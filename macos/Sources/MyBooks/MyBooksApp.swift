@@ -160,13 +160,10 @@ struct RootView: View {
             return
         }
         DebugLog.log("open: \(url.lastPathComponent)")
-        let known = store.books.first { $0.fileName == url.lastPathComponent }
-        if known == nil {
-            let accessed = url.startAccessingSecurityScopedResource()
-            store.importBook(at: url)
-            if accessed { url.stopAccessingSecurityScopedResource() }
-        }
-        if let record = store.books.first(where: { $0.fileName == url.lastPathComponent }) ?? store.books.first {
+        let accessed = url.startAccessingSecurityScopedResource()
+        let record = store.importBook(at: url)
+        if accessed { url.stopAccessingSecurityScopedResource() }
+        if let record {
             openRecord = record
         }
     }

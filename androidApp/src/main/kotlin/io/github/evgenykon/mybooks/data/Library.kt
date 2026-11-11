@@ -28,6 +28,7 @@ data class BookRecord(
     val addedAt: Long = 0L,
     val lastOpenedAt: Long = 0L,
     val blockCount: Int = 0,
+    val hash: String = "",
 ) {
     val position: Position get() = Position(blockIndex, charOffset)
 }
@@ -109,7 +110,22 @@ class LibraryRepository(context: Context) {
         book
     }
 
-    suspend fun importBook(uri: Uri, displayName: String?, bytes: ByteArray): BookRecord = withContext(Dispatchers.IO) {
+    companion object {
+        /** SHA-256 of the file contents; identifies duplicates. */
+        fun sha256(bytes: ByteArray): String {
+            val digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+            val sb = StringBuilder(digest.size * 2)
+            for (b in digest) sb.append(String.format("%02x", b))
+            return sb.toString()
+        }
+    }
+
+    suspend fun importBook(
+        uri: Uri,
+        displayName: String?,
+        bytes: ByteArray,
+        hash: String = "",
+    ): BookRecord = withContext(Dispatchers.IO) {
         val book = Fb2Parser.parseBytes(bytes)
         val id = UUID.randomUUID().toString()
         val name = "$id.fb2"
@@ -124,6 +140,7 @@ class LibraryRepository(context: Context) {
             totalChars = book.totalChars,
             addedAt = System.currentTimeMillis(),
             blockCount = book.blocks.size,
+            hash = hash,
         )
     }
 

@@ -32,12 +32,35 @@ class LibraryViewModel(private val repo: LibraryRepository) : ViewModel() {
         _message.value = null
     }
 
+    init {
+        // drop duplicates left over from earlier versions
+        val unique = mutableListOf<BookRecord>()
+        val seen = mutableSetOf<String>()
+        for (book in _books.value) {
+            if (book.hash.isNotEmpty() && !seen.add(book.hash)) {
+                repo.deleteBook(book)
+            } else {
+                unique.add(book)
+            }
+        }
+        if (unique.size != _books.value.size) {
+            _books.value = unique
+            repo.writeBooks(unique)
+        }
+    }
+
     fun importBook(uri: Uri, name: String?, loader: () -> ByteArray) {
         viewModelScope.launch {
             _importing.value = true
             try {
                 val bytes = withContext(Dispatchers.IO) { loader() }
-                val record = repo.importBook(uri, name, bytes)
+                val hash = LibraryRepository.sha256(bytes)
+                val duplicate = _books.value.firstOrNull { it.hash.isNotEmpty() && it.hash == hash }
+                if (duplicate != null) {
+                    _message.value = "Книга уже в библиотеке: ${duplicate.title}"
+                    return@launch
+                }
+                val record = repo.importBook(uri, name, bytes, hash)
                 val updated = _books.value + record
                 persist(updated)
                 _message.value = "Добавлено: ${record.title}"
