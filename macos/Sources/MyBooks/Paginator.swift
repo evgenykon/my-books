@@ -73,19 +73,19 @@ enum Paginator {
             size *= 1.5
             weight = .bold
             lineFactor = 1.2
-            spaceBefore = size * 2.0
-            spaceAfter = size * 1.1
+            spaceBefore = size * 1.1
+            spaceAfter = size * 0.6
         case "HEADING2":
             size *= 1.28
             weight = .semibold
             lineFactor = 1.15
-            spaceBefore = size * 1.5
-            spaceAfter = size * 0.8
+            spaceBefore = size * 0.9
+            spaceAfter = size * 0.45
         case "HEADING3":
             size *= 1.12
             weight = .semibold
-            spaceBefore = size * 1.0
-            spaceAfter = size * 0.6
+            spaceBefore = size * 0.65
+            spaceAfter = size * 0.35
         case "SUBTITLE":
             weight = .medium
             spaceBefore = size * 0.6

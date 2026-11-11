@@ -194,6 +194,7 @@ struct SettingsPanel: View {
                     set: { settings.justified = $0; onChange(settings) }
                 ))
                 .font(.system(size: 12))
+                .disabled(true)
 
                 Button("Сбросить") {
                     settings = ReaderSettings()
