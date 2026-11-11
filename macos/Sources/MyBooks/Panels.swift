@@ -144,7 +144,7 @@ struct SettingsPanel: View {
                         Text(families[index]).tag(index)
                     }
                 }
-                .pickerStyle(.segmented)
+                .pickerStyle(.menu)
                 .labelsHidden()
 
                 sliderRow(
