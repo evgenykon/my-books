@@ -15,6 +15,7 @@ struct PageSlice: Identifiable {
 struct ReaderPage: Identifiable {
     let id = UUID()
     var slices: [PageSlice]
+    var usedHeight: CGFloat = 0
     var firstBlockIndex: Int { slices.first?.blockIndex ?? 0 }
 }
 
@@ -42,6 +43,15 @@ enum Paginator {
     static func lineHeight(_ settings: ReaderSettings) -> CGFloat {
         metrics(kind: "PARAGRAPH", settings: settings).targetLineHeight
     }
+
+    /// Calibration: SwiftUI renders text a little tighter than CoreText measures, so the
+    /// line height used for pagination must match what is actually drawn.
+    static let heightK: CGFloat = {
+        if let raw = ProcessInfo.processInfo.environment["MYBOOKS_HEIGHT_K"], let value = Double(raw) {
+            return CGFloat(value)
+        }
+        return 0.85
+    }()
 
     struct BlockMetrics {
         var font: NSFont
@@ -91,7 +101,7 @@ enum Paginator {
 
         let font = Self.font(family: settings.fontFamily, size: size, weight: weight)
         let defaultLineHeight = ceil(font.ascender - font.descender + font.leading)
-        let target = (size * CGFloat(settings.lineHeight) * lineFactor).rounded()
+        let target = (size * CGFloat(settings.lineHeight) * lineFactor * Self.heightK).rounded()
         return BlockMetrics(
             font: font,
             fontSize: size,
@@ -186,7 +196,7 @@ enum Paginator {
 
         func flush() {
             if !slices.isEmpty {
-                pages.append(ReaderPage(slices: slices))
+                pages.append(ReaderPage(slices: slices, usedHeight: used))
                 slices = []
             }
             used = 0

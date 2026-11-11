@@ -26,15 +26,15 @@ struct Snapshot {
 
         try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
 
-        let pageWidth: CGFloat = 860
-        let pageHeight: CGFloat = 560
+        let pageWidth: CGFloat = 900
+        let pageHeight: CGFloat = 570
 
         for theme in 0...2 {
             var settings = ReaderSettings()
             settings.theme = theme
             settings.fontSize = 17
-            settings.marginH = 64
-            settings.marginV = 34
+            settings.marginH = 56
+            settings.marginV = 32
 
             let pages = Paginator.paginate(
                 book: book,

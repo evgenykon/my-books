@@ -13,6 +13,15 @@ struct PageSlicesView: View {
     var onNote: (PageSlice) -> Void = { _ in }
     var onCopy: (PageSlice) -> Void = { _ in }
 
+    /// SwiftUI draws slightly tighter than CoreText measures; this closes the gap so a
+    /// page filled by the paginator is also visually filled.
+    static let extraSpacing: CGFloat = {
+        if let raw = ProcessInfo.processInfo.environment["MYBOOKS_LINE_K"], let value = Double(raw) {
+            return CGFloat(value)
+        }
+        return 0.0
+    }()
+
     private var palette: ReaderPalette { ReaderPalette.of(settings) }
 
     private func color(for kind: String) -> Color {
@@ -30,7 +39,7 @@ struct PageSlicesView: View {
                 let m = Paginator.metrics(kind: slice.kind, settings: settings)
                 Text(swiftUIAttributed(slice.text))
                     .foregroundStyle(color(for: slice.kind))
-                    .lineSpacing(m.swiftUILineSpacing)
+                    .lineSpacing(m.swiftUILineSpacing + Self.extraSpacing * CGFloat(settings.fontSize))
                     .padding(.bottom, m.paragraphSpacing)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)

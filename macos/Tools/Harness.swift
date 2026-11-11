@@ -53,6 +53,7 @@ struct Harness {
             let pages = Paginator.paginate(book: book, settings: settings, pageSize: size)
             let chars = pages.reduce(0) { $0 + $1.slices.reduce(0) { $0 + $1.text.length } }
             print("page size \(Int(size.width))x\(Int(size.height)): pages=\(pages.count) chars=\(chars)")
+            print("  used heights:", pages.prefix(4).map { Int($0.usedHeight) })
             if let first = pages.first {
                 let preview = first.slices.map { $0.text.string }.joined(separator: " / ")
                 print("  page 1 slices=\(first.slices.count):", preview.prefix(120))

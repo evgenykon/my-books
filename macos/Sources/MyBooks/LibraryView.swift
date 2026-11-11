@@ -109,6 +109,7 @@ struct LibraryView: View {
 private struct BookRow: View {
     let record: BookRecord
     let noteCount: Int
+    var onDelete: () -> Void = {}
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
@@ -137,6 +138,16 @@ private struct BookRow: View {
                 .padding(.top, 2)
             }
             Spacer()
+
+            Button {
+                onDelete()
+            } label: {
+                Image(systemName: "trash")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .help("Удалить книгу")
+            .opacity(1)
         }
         .padding(.vertical, 8)
     }
