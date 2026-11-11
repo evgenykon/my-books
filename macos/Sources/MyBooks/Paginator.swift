@@ -53,11 +53,28 @@ enum Paginator {
 
     /// Calibration: SwiftUI renders text a little tighter than CoreText measures, so the
     /// line height used for pagination must match what is actually drawn.
+    /// CoreText over-estimates block heights, so pagination asks for a slightly taller
+    /// virtual page; the real renderer then fills the page edge to edge.
+    static let heightBoost: CGFloat = {
+        if let raw = ProcessInfo.processInfo.environment["MYBOOKS_HEIGHT_BOOST"], let value = Double(raw) {
+            return CGFloat(value)
+        }
+        return 1.15
+    }()
+
+    /// Extra shrink applied only to measurement (renderer keeps the real typography).
+    static let measureK: CGFloat = {
+        if let raw = ProcessInfo.processInfo.environment["MYBOOKS_MEASURE_K"], let value = Double(raw) {
+            return CGFloat(value)
+        }
+        return 1.0
+    }()
+
     static let heightK: CGFloat = {
         if let raw = ProcessInfo.processInfo.environment["MYBOOKS_HEIGHT_K"], let value = Double(raw) {
             return CGFloat(value)
         }
-        return 0.68
+        return 1.0
     }()
 
     struct BlockMetrics {
@@ -165,7 +182,7 @@ enum Paginator {
 
         // Only the font and the line spacing travel with the string: SwiftUI applies
         // alignment/indents itself, and NSParagraphStyle from AttributedString is unreliable.
-        paragraph.lineSpacing = m.swiftUILineSpacing
+        paragraph.lineSpacing = m.swiftUILineSpacing * measureK
         // Quoted blocks are indented from the left; measuring must use the same width.
         paragraph.headIndent = m.leadingIndent
         paragraph.firstLineHeadIndent = m.leadingIndent
@@ -218,7 +235,7 @@ enum Paginator {
 
     static func paginate(book: Book, settings: ReaderSettings, pageSize: CGSize) -> [ReaderPage] {
         let width = pageSize.width
-        let height = pageSize.height
+        let height = pageSize.height * heightBoost
         guard width > 40, height > 40 else { return [] }
 
         let safety = lineHeight(settings) * 0.95
