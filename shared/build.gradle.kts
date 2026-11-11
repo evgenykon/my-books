@@ -18,12 +18,13 @@ kotlin {
         }
     }
 
-    val xcf = org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework("Shared")
-    listOf(macosArm64(), macosX64()).forEach { target ->
+    macosArm64()
+    macosX64()
+
+    targets.withType<KotlinNativeTarget>().forEach { target ->
         target.binaries.framework {
             baseName = "Shared"
             isStatic = true
-            xcf.add(this)
         }
     }
 

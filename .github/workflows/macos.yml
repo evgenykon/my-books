@@ -25,15 +25,18 @@ jobs:
         with:
           gradle-version: "8.11.1"
 
-      - name: Build Kotlin/Native XCFramework
-        run: gradle --no-daemon :shared:assembleSharedReleaseXCFramework
+      - name: Build Kotlin/Native frameworks
+        run: gradle --no-daemon :shared:linkReleaseFrameworkMacosArm64 :shared:linkReleaseFrameworkMacosX64
 
-      - name: Place XCFramework
+      - name: Assemble XCFramework
         run: |
-          FRAMEWORK="$(find shared/build -name 'Shared.xcframework' -type d | head -1)"
-          echo "found: $FRAMEWORK"
+          ARM="$(find shared/build -type d -name 'Shared.framework' -path '*macosArm64*' | head -1)"
+          INTEL="$(find shared/build -type d -name 'Shared.framework' -path '*macosX64*' | head -1)"
+          echo "arm64: $ARM"
+          echo "x64:   $INTEL"
+          test -n "$ARM" && test -n "$INTEL"
           rm -rf macos/Shared.xcframework
-          cp -R "$FRAMEWORK" macos/Shared.xcframework
+          xcodebuild -create-xcframework -framework "$ARM" -framework "$INTEL" -output macos/Shared.xcframework
 
       - name: Build app bundle
         run: chmod +x macos/build.sh && ./macos/build.sh release
