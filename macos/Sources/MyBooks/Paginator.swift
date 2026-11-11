@@ -40,61 +40,99 @@ enum Paginator {
 
     /// Line height used for spacing maths and safety margins.
     static func lineHeight(_ settings: ReaderSettings) -> CGFloat {
-        let size = CGFloat(settings.fontSize)
-        return size * CGFloat(settings.lineHeight) * 1.28
+        metrics(kind: "PARAGRAPH", settings: settings).targetLineHeight
     }
 
-    static func attributes(kind: String, settings: ReaderSettings) -> [NSAttributedString.Key: Any] {
-        let palette = ReaderPalette.of(settings)
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineHeightMultiple = CGFloat(settings.lineHeight)
-        paragraph.alignment = settings.justified ? .justified : .natural
-        paragraph.lineBreakMode = .byWordWrapping
+    struct BlockMetrics {
+        var font: NSFont
+        var fontSize: CGFloat
+        var targetLineHeight: CGFloat
+        var paragraphSpacing: CGFloat
+        /// What SwiftUI needs in `.lineSpacing` to reach `targetLineHeight`.
+        var swiftUILineSpacing: CGFloat
+    }
 
+    static func metrics(kind: String, settings: ReaderSettings) -> BlockMetrics {
         var size = CGFloat(settings.fontSize)
         var weight: NSFont.Weight = .regular
+        var spacing = size * 0.45
+        var lineFactor: CGFloat = 1
 
         switch kind {
         case "HEADING1":
             size *= 1.5
             weight = .bold
-            paragraph.alignment = .center
-            paragraph.paragraphSpacing = size * 0.9
+            lineFactor = 1.25
+            spacing = size * 0.9
         case "HEADING2":
             size *= 1.28
             weight = .semibold
-            paragraph.alignment = .center
-            paragraph.paragraphSpacing = size * 0.6
+            lineFactor = 1.2
+            spacing = size * 0.6
         case "HEADING3":
             size *= 1.12
             weight = .semibold
-            paragraph.paragraphSpacing = size * 0.4
+            spacing = size * 0.4
         case "SUBTITLE":
             weight = .medium
-            paragraph.paragraphSpacing = size * 0.3
+            spacing = size * 0.3
         case "EPIGRAPH":
             size *= 0.92
-            paragraph.headIndent = size * 1.2
-            paragraph.firstLineHeadIndent = size * 1.2
+            spacing = size * 0.2
         case "EPIGRAPH_AUTHOR":
             size *= 0.88
-            paragraph.alignment = .right
+            spacing = size * 0.2
         case "POEM":
             size *= 0.95
-            paragraph.firstLineHeadIndent = size * 1.4
-            paragraph.headIndent = size * 1.4
-        case "PARAGRAPH":
-            paragraph.firstLineHeadIndent = size * 1.1
-            paragraph.paragraphSpacing = size * 0.45
+            spacing = size * 0.2
         default:
-            paragraph.paragraphSpacing = size * 0.45
+            break
         }
 
         let font = Self.font(family: settings.fontFamily, size: size, weight: weight)
-        // No .foregroundColor here: SwiftUI ignores AppKit colours from AttributedString,
-        // the view applies the palette colour per block kind instead.
+        let defaultLineHeight = ceil(font.ascender - font.descender + font.leading)
+        let target = (size * CGFloat(settings.lineHeight) * lineFactor).rounded()
+        return BlockMetrics(
+            font: font,
+            fontSize: size,
+            targetLineHeight: target,
+            paragraphSpacing: spacing,
+            swiftUILineSpacing: max(0, target - defaultLineHeight)
+        )
+    }
+
+    static func attributes(kind: String, settings: ReaderSettings) -> [NSAttributedString.Key: Any] {
+        let m = metrics(kind: kind, settings: settings)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = settings.justified ? .justified : .natural
+        paragraph.lineBreakMode = .byWordWrapping
+
+        // SwiftUI ignores NSParagraphStyle.lineHeightMultiple / paragraphSpacing, so the
+        // page view reproduces them with .lineSpacing and .padding — both derived here.
+        let defaultLineHeight = ceil(m.font.ascender - m.font.descender + m.font.leading)
+        paragraph.minimumLineHeight = m.targetLineHeight
+        paragraph.maximumLineHeight = m.targetLineHeight
+        _ = defaultLineHeight
+
+        switch kind {
+        case "HEADING1", "HEADING2":
+            paragraph.alignment = .center
+        case "EPIGRAPH":
+            paragraph.headIndent = m.fontSize * 1.2
+            paragraph.firstLineHeadIndent = m.fontSize * 1.2
+        case "EPIGRAPH_AUTHOR":
+            paragraph.alignment = .right
+        case "POEM":
+            paragraph.firstLineHeadIndent = m.fontSize * 1.4
+            paragraph.headIndent = m.fontSize * 1.4
+        case "PARAGRAPH":
+            paragraph.firstLineHeadIndent = m.fontSize * 1.1
+        default:
+            break
+        }
+
         return [
-            .font: font,
+            .font: m.font,
             .paragraphStyle: paragraph,
         ]
     }
@@ -141,7 +179,7 @@ enum Paginator {
         let height = pageSize.height
         guard width > 40, height > 40 else { return [] }
 
-        let safety = lineHeight(settings) * 1.1
+        let safety = lineHeight(settings) * 0.3
         var pages: [ReaderPage] = []
         var slices: [PageSlice] = []
         var used: CGFloat = 0
@@ -170,7 +208,7 @@ enum Paginator {
             var first = true
 
             while start < total {
-                if height - used - safety < lineHeight(settings) {
+                if height - used - safety < lineHeight(settings) * 0.6 {
                     flush()
                     continue
                 }
@@ -191,7 +229,7 @@ enum Paginator {
                 }
                 let part = attr.attributedSubstring(from: NSRange(location: start, length: chars))
                 slices.append(PageSlice(blockIndex: Int(block.index), kind: kind, text: part, continuation: !first))
-                used += consumed
+                used += consumed + metrics(kind: kind, settings: settings).paragraphSpacing
                 start += chars
                 first = false
                 if start < total { flush() }

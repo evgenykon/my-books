@@ -27,8 +27,11 @@ struct PageSlicesView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(slices) { slice in
+                let m = Paginator.metrics(kind: slice.kind, settings: settings)
                 Text(swiftUIAttributed(slice.text))
                     .foregroundStyle(color(for: slice.kind))
+                    .lineSpacing(m.swiftUILineSpacing)
+                    .padding(.bottom, m.paragraphSpacing)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contextMenu {
