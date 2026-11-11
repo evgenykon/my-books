@@ -30,7 +30,10 @@ data class Block(
     val kind: BlockKind,
     val text: String,
     val href: String? = null,
-)
+) {
+    /** String form of [kind], so Swift can switch on it without enum bridging. */
+    val kindName: String get() = kind.name
+}
 
 /** Entry of the table of contents; [blockIndex] is where the heading lives. */
 @Serializable
