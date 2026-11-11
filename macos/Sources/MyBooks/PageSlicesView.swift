@@ -1,44 +1,15 @@
 import SwiftUI
 import AppKit
 
-/// Converts a CoreText-produced attributed string into a SwiftUI attributable text.
-func swiftUIAttributed(_ ns: NSAttributedString) -> AttributedString {
-    (try? AttributedString(ns, including: \.appKit)) ?? AttributedString(ns.string)
-}
-
-/// Renders the slices of one page: the text the paginator decided fits here.
+/// Renders one page as a stack of lines, each with an explicit frame height, so the
+/// line-height setting is applied by us and does not depend on SwiftUI text metrics.
 struct PageSlicesView: View {
-    let slices: [PageSlice]
+    let lines: [PageLine]
     let settings: ReaderSettings
-    var onNote: (PageSlice) -> Void = { _ in }
-    var onCopy: (PageSlice) -> Void = { _ in }
-
-    /// SwiftUI draws slightly tighter than CoreText measures; this closes the gap so a
-    /// page filled by the paginator is also visually filled.
-    static let extraSpacing: CGFloat = {
-        if let raw = ProcessInfo.processInfo.environment["MYBOOKS_LINE_K"], let value = Double(raw) {
-            return CGFloat(value)
-        }
-        return 0.0
-    }()
+    var onNote: (PageLine) -> Void = { _ in }
+    var onCopy: (PageLine) -> Void = { _ in }
 
     private var palette: ReaderPalette { ReaderPalette.of(settings) }
-
-    private func frameAlignment(for kind: String) -> Alignment {
-        switch kind {
-        case "HEADING1", "HEADING2": return .center
-        case "EPIGRAPH_AUTHOR": return .trailing
-        default: return .leading
-        }
-    }
-
-    private func textAlignment(for kind: String) -> TextAlignment {
-        switch kind {
-        case "HEADING1", "HEADING2": return .center
-        case "EPIGRAPH_AUTHOR": return .trailing
-        default: return .leading
-        }
-    }
 
     private func color(for kind: String) -> Color {
         switch kind {
@@ -49,24 +20,35 @@ struct PageSlicesView: View {
         }
     }
 
+    private func alignment(for kind: String) -> Alignment {
+        switch kind {
+        case "HEADING1", "HEADING2": return .center
+        case "EPIGRAPH_AUTHOR": return .trailing
+        default: return .leading
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(slices) { slice in
-                let m = Paginator.metrics(kind: slice.kind, settings: settings)
-                Text(slice.text.string)
+            ForEach(lines) { line in
+                let m = Paginator.metrics(kind: line.kind, settings: settings)
+                Text(line.text)
                     .font(Font(m.font))
-                    .foregroundStyle(color(for: slice.kind))
-                    .multilineTextAlignment(textAlignment(for: slice.kind))
-                    .lineSpacing(m.swiftUILineSpacing)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .foregroundStyle(color(for: line.kind))
+                    .lineLimit(1)
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: m.lineHeight,
+                        maxHeight: m.lineHeight,
+                        alignment: alignment(for: line.kind)
+                    )
                     .padding(.leading, m.leadingIndent)
-                    .padding(.top, m.spaceBefore)
-                    .padding(.bottom, m.paragraphSpacing)
+                    .padding(.top, line.isFirstOfBlock ? m.spaceBefore : 0)
+                    .padding(.bottom, line.isLastOfBlock ? m.spaceAfter : 0)
                     .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: frameAlignment(for: slice.kind))
                     .contextMenu {
-                        Button("Копировать абзац") { onCopy(slice) }
-                        Button("Добавить заметку") { onNote(slice) }
+                        Button("Копировать строку") { onCopy(line) }
+                        Button("Добавить заметку") { onNote(line) }
                     }
             }
             Spacer(minLength: 0)

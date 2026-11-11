@@ -33,6 +33,7 @@ struct Snapshot {
             var settings = ReaderSettings()
             settings.theme = theme
             settings.fontSize = 17
+            if let raw = ProcessInfo.processInfo.environment["MYBOOKS_LINEHEIGHT"], let value = Double(raw) { settings.lineHeight = value }
             settings.marginH = 64
             settings.marginV = 40
 
@@ -58,7 +59,7 @@ struct Snapshot {
                     palette: palette
                 )
                 Divider()
-                PageSlicesView(slices: page.slices, settings: settings)
+                PageSlicesView(lines: page.lines, settings: settings)
             }
             .frame(width: pageWidth, height: pageHeight)
             .background(Color(nsColor: NSColor(hex: palette.background)))
@@ -74,7 +75,7 @@ struct Snapshot {
             }
             let path = "\(outDir)/reader-theme\(theme).png"
             try? png.write(to: URL(fileURLWithPath: path))
-            print("wrote", path, "pages:", pages.count, "slices on page 1:", page.slices.count)
+            print("wrote", path, "pages:", pages.count, "lines on page 1:", page.lines.count)
         }
         print("OK")
     }

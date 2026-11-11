@@ -3,25 +3,26 @@ import CoreText
 import Foundation
 import Shared
 
-/// One piece of a block that fits on a page.
-struct PageSlice: Identifiable {
+/// One rendered line of text on a page.
+struct PageLine: Identifiable {
     let id = UUID()
     let blockIndex: Int
     let kind: String
-    let text: NSAttributedString
-    let continuation: Bool
+    let text: String
+    let isFirstOfBlock: Bool
+    let isLastOfBlock: Bool
 }
 
 struct ReaderPage: Identifiable {
     let id = UUID()
-    var slices: [PageSlice]
+    var lines: [PageLine]
     var usedHeight: CGFloat = 0
-    var firstBlockIndex: Int { slices.first?.blockIndex ?? 0 }
+    var firstBlockIndex: Int { lines.first?.blockIndex ?? 0 }
 }
 
 enum Paginator {
 
-    // MARK: - Fonts & styles
+    // MARK: - Fonts
 
     static let familyNames = ["PT Serif", "Charter", "Iowan Old Style", "Georgia", "Helvetica Neue", "Menlo"]
 
@@ -29,9 +30,8 @@ enum Paginator {
         let index = min(max(family, 0), familyNames.count - 1)
         let name = familyNames[index]
         if let font = NSFont(name: name, size: size) {
-            // apply weight by re-instantiating the family with a bold/medium face when possible
-            if weight != .regular, let bolded = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask) as NSFont? {
-                return bolded
+            if weight != .regular {
+                return NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
             }
             return font
         }
@@ -39,214 +39,113 @@ enum Paginator {
             return NSFont.monospacedSystemFont(ofSize: size, weight: weight)
         }
         let base = NSFont.systemFont(ofSize: size, weight: weight)
-        if let descriptor = base.fontDescriptor.withDesign(index == familyNames.count - 2 ? .default : .serif),
-           let font = NSFont(descriptor: descriptor, size: size) {
+        if let descriptor = base.fontDescriptor.withDesign(.serif), let font = NSFont(descriptor: descriptor, size: size) {
             return font
         }
         return base
     }
 
-    /// Line height used for spacing maths and safety margins.
-    static func lineHeight(_ settings: ReaderSettings) -> CGFloat {
-        metrics(kind: "PARAGRAPH", settings: settings).targetLineHeight
-    }
-
-    /// Calibration: SwiftUI renders text a little tighter than CoreText measures, so the
-    /// line height used for pagination must match what is actually drawn.
-    /// CoreText over-estimates block heights, so pagination asks for a slightly taller
-    /// virtual page; the real renderer then fills the page edge to edge.
-    static let heightBoost: CGFloat = {
-        if let raw = ProcessInfo.processInfo.environment["MYBOOKS_HEIGHT_BOOST"], let value = Double(raw) {
-            return CGFloat(value)
-        }
-        return 1.15
-    }()
-
-    /// Extra shrink applied only to measurement (renderer keeps the real typography).
-    static let measureK: CGFloat = {
-        if let raw = ProcessInfo.processInfo.environment["MYBOOKS_MEASURE_K"], let value = Double(raw) {
-            return CGFloat(value)
-        }
-        return 1.0
-    }()
-
-    static let heightK: CGFloat = {
-        if let raw = ProcessInfo.processInfo.environment["MYBOOKS_HEIGHT_K"], let value = Double(raw) {
-            return CGFloat(value)
-        }
-        return 1.0
-    }()
+    // MARK: - Metrics
 
     struct BlockMetrics {
         var font: NSFont
         var fontSize: CGFloat
-        var targetLineHeight: CGFloat
-        /// Space above a block (chapter headings get a lot of air).
+        /// Exact height of one line box — what the line-height slider controls.
+        var lineHeight: CGFloat
+        /// Space above the block (chapter headings get a lot of air).
         var spaceBefore: CGFloat
-        /// Space below a block.
-        var paragraphSpacing: CGFloat
+        /// Space below the block.
+        var spaceAfter: CGFloat
         /// Left inset for quoted blocks such as epigraphs.
         var leadingIndent: CGFloat
-        /// What SwiftUI needs in `.lineSpacing` to reach `targetLineHeight`.
-        var swiftUILineSpacing: CGFloat
     }
 
     static func metrics(kind: String, settings: ReaderSettings) -> BlockMetrics {
         var size = CGFloat(settings.fontSize)
         var weight: NSFont.Weight = .regular
-        var spacing = size * 0.85
-        var spaceBefore: CGFloat = 0
-        var leadingIndent: CGFloat = 0
         var lineFactor: CGFloat = 1
+        var spaceBefore: CGFloat = 0
+        var spaceAfter = size * 0.85
+        var leadingIndent: CGFloat = 0
 
         switch kind {
         case "HEADING1":
             size *= 1.5
             weight = .bold
             lineFactor = 1.2
-            spacing = size * 1.1
             spaceBefore = size * 2.0
+            spaceAfter = size * 1.1
         case "HEADING2":
             size *= 1.28
             weight = .semibold
             lineFactor = 1.15
-            spacing = size * 0.8
             spaceBefore = size * 1.5
+            spaceAfter = size * 0.8
         case "HEADING3":
             size *= 1.12
             weight = .semibold
-            spacing = size * 0.6
             spaceBefore = size * 1.0
+            spaceAfter = size * 0.6
         case "SUBTITLE":
             weight = .medium
-            spacing = size * 0.5
             spaceBefore = size * 0.6
+            spaceAfter = size * 0.5
         case "EPIGRAPH":
             size *= 0.92
-            spacing = size * 0.2
             spaceBefore = size * 0.9
+            spaceAfter = size * 0.2
             leadingIndent = size * 3.2
         case "EPIGRAPH_AUTHOR":
             size *= 0.88
-            spacing = size * 1.1
+            spaceAfter = size * 1.1
             leadingIndent = size * 3.2
         case "POEM":
             size *= 0.95
-            spacing = size * 0.2
+            spaceAfter = size * 0.2
             leadingIndent = size * 1.4
         default:
             break
         }
 
         let font = Self.font(family: settings.fontFamily, size: size, weight: weight)
-        let defaultLineHeight = ceil(font.ascender - font.descender + font.leading)
-        let target = (size * CGFloat(settings.lineHeight) * lineFactor * Self.heightK).rounded()
+        let natural = ceil(font.ascender - font.descender + font.leading)
+        let lineHeight = max(natural, (size * CGFloat(settings.lineHeight) * lineFactor).rounded())
+
         return BlockMetrics(
             font: font,
             fontSize: size,
-            targetLineHeight: target,
+            lineHeight: lineHeight,
             spaceBefore: spaceBefore,
-            paragraphSpacing: spacing,
-            leadingIndent: leadingIndent,
-            swiftUILineSpacing: max(0, target - defaultLineHeight)
+            spaceAfter: spaceAfter,
+            leadingIndent: leadingIndent
         )
     }
 
-    static func attributes(kind: String, settings: ReaderSettings) -> [NSAttributedString.Key: Any] {
-        let m = metrics(kind: kind, settings: settings)
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = settings.justified ? .justified : .natural
-        paragraph.lineBreakMode = .byWordWrapping
-
-        // SwiftUI ignores NSParagraphStyle.lineHeightMultiple / paragraphSpacing, so the
-        // page view reproduces them with .lineSpacing and .padding — both derived here.
-        let defaultLineHeight = ceil(m.font.ascender - m.font.descender + m.font.leading)
-        paragraph.minimumLineHeight = m.targetLineHeight
-        paragraph.maximumLineHeight = m.targetLineHeight
-        _ = defaultLineHeight
-
-        switch kind {
-        case "HEADING1", "HEADING2":
-            paragraph.alignment = .center
-        case "EPIGRAPH":
-            paragraph.headIndent = m.fontSize * 1.2
-            paragraph.firstLineHeadIndent = m.fontSize * 1.2
-        case "EPIGRAPH_AUTHOR":
-            paragraph.alignment = .right
-        case "POEM":
-            paragraph.firstLineHeadIndent = m.fontSize * 1.4
-            paragraph.headIndent = m.fontSize * 1.4
-        default:
-            break
-        }
-
-        // Only the font and the line spacing travel with the string: SwiftUI applies
-        // alignment/indents itself, and NSParagraphStyle from AttributedString is unreliable.
-        paragraph.lineSpacing = m.swiftUILineSpacing * measureK
-        // Quoted blocks are indented from the left; measuring must use the same width.
-        paragraph.headIndent = m.leadingIndent
-        paragraph.firstLineHeadIndent = m.leadingIndent
-        return [
-            .font: m.font,
-            .paragraphStyle: paragraph,
-        ]
-    }
-
-    /// Paragraph indent rendered as characters: SwiftUI ignores `firstLineHeadIndent`.
+    /// Paragraph indent as characters (SwiftUI drops `firstLineHeadIndent`).
     static let indentPrefix = "\u{2003}\u{2002}"
 
-    static func attributed(kind: String, text: String, settings: ReaderSettings) -> NSAttributedString {
+    private static func attributedText(kind: String, text: String, settings: ReaderSettings) -> NSAttributedString {
         let body = kind == "PARAGRAPH" ? indentPrefix + text : text
-        return NSAttributedString(string: body, attributes: attributes(kind: kind, settings: settings))
+        return NSAttributedString(string: body, attributes: [.font: metrics(kind: kind, settings: settings).font])
     }
 
     // MARK: - Pagination
 
-    /// Measures how many characters of `attr` fit into `available` height at `width`.
-    private static func fill(
-        attr: NSAttributedString,
-        start: Int,
-        width: CGFloat,
-        available: CGFloat
-    ) -> (chars: Int, height: CGFloat) {
-        guard available > 1, width > 1 else { return (0, 0) }
-        let framesetter = CTFramesetterCreateWithAttributedString(attr)
-        let path = CGPath(rect: CGRect(x: 0, y: 0, width: width, height: available), transform: nil)
-        let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: start, length: 0), path, nil)
-        guard let lines = CTFrameGetLines(frame) as? [CTLine], !lines.isEmpty else { return (0, 0) }
-
-        var origins = [CGPoint](repeating: .zero, count: lines.count)
-        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
-
-        let lastIndex = lines.count - 1
-        var ascent: CGFloat = 0
-        var descent: CGFloat = 0
-        var leading: CGFloat = 0
-        _ = CTLineGetTypographicBounds(lines[lastIndex], &ascent, &descent, &leading)
-
-        let lastRange = CTLineGetStringRange(lines[lastIndex])
-        let end = lastRange.location + lastRange.length
-        let chars = end - start
-        guard chars > 0 else { return (0, 0) }
-
-        let consumed = available - (origins[lastIndex].y - descent)
-        return (chars, min(max(consumed, 1), available))
-    }
-
+    /// Splits the book into pages of whole lines. Because the page view renders each
+    /// line with an explicit frame height, the layout matches the measurement exactly.
     static func paginate(book: Book, settings: ReaderSettings, pageSize: CGSize) -> [ReaderPage] {
         let width = pageSize.width
-        let height = pageSize.height * heightBoost
+        let height = pageSize.height
         guard width > 40, height > 40 else { return [] }
 
-        let safety = lineHeight(settings) * 0.95
         var pages: [ReaderPage] = []
-        var slices: [PageSlice] = []
+        var lines: [PageLine] = []
         var used: CGFloat = 0
 
         func flush() {
-            if !slices.isEmpty {
-                pages.append(ReaderPage(slices: slices, usedHeight: used))
-                slices = []
+            if !lines.isEmpty {
+                pages.append(ReaderPage(lines: lines, usedHeight: used))
+                lines = []
             }
             used = 0
         }
@@ -256,52 +155,53 @@ enum Paginator {
             let text = block.text
 
             if text.isEmpty {
-                let extra = CGFloat(settings.fontSize) * 0.8
-                if used + extra > height - safety { flush() } else { used += extra }
+                let extra = CGFloat(settings.fontSize) * 0.6
+                if used + extra > height { flush() } else { used += extra }
                 continue
             }
 
-            let blockMetrics = metrics(kind: kind, settings: settings)
-            if blockMetrics.spaceBefore > 0 {
-                if used + blockMetrics.spaceBefore > height - safety {
-                    flush()
-                }
-                used += blockMetrics.spaceBefore
-            }
-            let attr = attributed(kind: kind, text: text, settings: settings)
-            let total = attr.length
-            var start = 0
-            var first = true
+            let m = metrics(kind: kind, settings: settings)
+            if used + m.spaceBefore + m.lineHeight > height { flush() }
+            used += m.spaceBefore
 
-            while start < total {
-                if height - used - safety < lineHeight(settings) * 0.6 {
-                    flush()
-                    continue
-                }
-                let available = height - used - safety
-                let (chars, consumed) = fill(attr: attr, start: start, width: width, available: available)
-                if chars <= 0 {
-                    if slices.isEmpty {
-                        // Page is empty but nothing fits: force one character forward.
-                        let length = min(1, total - start)
-                        let part = attr.attributedSubstring(from: NSRange(location: start, length: length))
-                        slices.append(PageSlice(blockIndex: Int(block.index), kind: kind, text: part, continuation: !first))
-                        start += length
-                        flush()
-                        continue
-                    }
-                    flush()
-                    continue
-                }
-                let part = attr.attributedSubstring(from: NSRange(location: start, length: chars))
-                slices.append(PageSlice(blockIndex: Int(block.index), kind: kind, text: part, continuation: !first))
-                used += consumed + metrics(kind: kind, settings: settings).paragraphSpacing
-                start += chars
-                first = false
-                if start < total { flush() }
+            let attr = attributedText(kind: kind, text: text, settings: settings)
+            let framesetter = CTFramesetterCreateWithAttributedString(attr)
+            let path = CGPath(
+                rect: CGRect(x: 0, y: 0, width: max(width - m.leadingIndent, 40), height: 100_000),
+                transform: nil
+            )
+            let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: 0, length: 0), path, nil)
+            let ctLines = (CTFrameGetLines(frame) as? [CTLine]) ?? []
+            let source = attr.string as NSString
+
+            var blockLines: [String] = []
+            for ctLine in ctLines {
+                let range = CTLineGetStringRange(ctLine)
+                guard range.length > 0 else { continue }
+                let piece = source.substring(with: NSRange(location: range.location, length: range.length))
+                let trimmed = piece.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { blockLines.append(trimmed) }
+            }
+            if blockLines.isEmpty { blockLines = [text] }
+
+            for (index, lineText) in blockLines.enumerated() {
+                if used + m.lineHeight > height { flush() }
+                lines.append(
+                    PageLine(
+                        blockIndex: Int(block.index),
+                        kind: kind,
+                        text: lineText,
+                        isFirstOfBlock: index == 0,
+                        isLastOfBlock: index == blockLines.count - 1
+                    )
+                )
+                used += m.lineHeight
+                if index == blockLines.count - 1 { used += m.spaceAfter }
             }
         }
+
         flush()
+        if pages.isEmpty { pages.append(ReaderPage(lines: [])) }
         return pages
     }
 

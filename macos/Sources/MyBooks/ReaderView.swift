@@ -211,14 +211,17 @@ struct ReaderView: View {
 
     private var pageContent: some View {
         let page = pages[safe: pageIndex]
-        return VStack(alignment: .leading, spacing: 0) {
-            ForEach(page?.slices ?? []) { slice in
-                sliceView(slice)
+        return PageSlicesView(
+            lines: page?.lines ?? [],
+            settings: settings,
+            onNote: { line in
+                noteDraft = NoteDraft(blockIndex: line.blockIndex, quote: line.text)
+            },
+            onCopy: { line in
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(line.text, forType: .string)
             }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, settings.marginH)
-        .padding(.vertical, settings.marginV)
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
             PagingEventBridge(
@@ -232,25 +235,6 @@ struct ReaderView: View {
                 }
             )
         )
-    }
-
-    private func sliceView(_ slice: PageSlice) -> some View {
-        Text(swiftUIAttributed(slice.text))
-            .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contextMenu {
-                Button("Копировать абзац") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(slice.text.string, forType: .string)
-                }
-                Button("Добавить заметку") {
-                    noteDraft = NoteDraft(blockIndex: slice.blockIndex, quote: slice.text.string)
-                }
-            }
-    }
-
-    private func swiftUIAttributed(_ ns: NSAttributedString) -> AttributedString {
-        (try? AttributedString(ns, including: \.appKit)) ?? AttributedString(ns.string)
     }
 
     // MARK: - Navigation

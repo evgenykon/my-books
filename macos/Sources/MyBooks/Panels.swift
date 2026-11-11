@@ -158,7 +158,7 @@ struct SettingsPanel: View {
                 )
 
                 sliderRow(
-                    "Межстрочный интервал",
+                    "Высота строки",
                     value: Binding(
                         get: { settings.lineHeight },
                         set: { settings.lineHeight = $0; onChange(settings) }
