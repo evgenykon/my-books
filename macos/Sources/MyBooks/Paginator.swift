@@ -23,20 +23,27 @@ enum Paginator {
 
     // MARK: - Fonts & styles
 
+    static let familyNames = ["PT Serif", "Charter", "Iowan Old Style", "Georgia", "Helvetica Neue", "Menlo"]
+
     static func font(family: Int, size: CGFloat, weight: NSFont.Weight) -> NSFont {
-        switch family {
-        case 0:
-            let base = NSFont.systemFont(ofSize: size, weight: weight)
-            if let descriptor = base.fontDescriptor.withDesign(.serif),
-               let serif = NSFont(descriptor: descriptor, size: size) {
-                return serif
+        let index = min(max(family, 0), familyNames.count - 1)
+        let name = familyNames[index]
+        if let font = NSFont(name: name, size: size) {
+            // apply weight by re-instantiating the family with a bold/medium face when possible
+            if weight != .regular, let bolded = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask) as NSFont? {
+                return bolded
             }
-            return base
-        case 2:
-            return NSFont.monospacedSystemFont(ofSize: size, weight: weight)
-        default:
-            return NSFont.systemFont(ofSize: size, weight: weight)
+            return font
         }
+        if index == familyNames.count - 1 {
+            return NSFont.monospacedSystemFont(ofSize: size, weight: weight)
+        }
+        let base = NSFont.systemFont(ofSize: size, weight: weight)
+        if let descriptor = base.fontDescriptor.withDesign(index == familyNames.count - 2 ? .default : .serif),
+           let font = NSFont(descriptor: descriptor, size: size) {
+            return font
+        }
+        return base
     }
 
     /// Line height used for spacing maths and safety margins.
@@ -50,7 +57,7 @@ enum Paginator {
         if let raw = ProcessInfo.processInfo.environment["MYBOOKS_HEIGHT_K"], let value = Double(raw) {
             return CGFloat(value)
         }
-        return 0.85
+        return 0.92
     }()
 
     struct BlockMetrics {
@@ -65,27 +72,27 @@ enum Paginator {
     static func metrics(kind: String, settings: ReaderSettings) -> BlockMetrics {
         var size = CGFloat(settings.fontSize)
         var weight: NSFont.Weight = .regular
-        var spacing = size * 0.45
+        var spacing = size * 0.85
         var lineFactor: CGFloat = 1
 
         switch kind {
         case "HEADING1":
             size *= 1.5
             weight = .bold
-            lineFactor = 1.25
-            spacing = size * 0.9
+            lineFactor = 1.2
+            spacing = size * 1.3
         case "HEADING2":
             size *= 1.28
             weight = .semibold
-            lineFactor = 1.2
-            spacing = size * 0.6
+            lineFactor = 1.15
+            spacing = size * 1.0
         case "HEADING3":
             size *= 1.12
             weight = .semibold
-            spacing = size * 0.4
+            spacing = size * 0.7
         case "SUBTITLE":
             weight = .medium
-            spacing = size * 0.3
+            spacing = size * 0.5
         case "EPIGRAPH":
             size *= 0.92
             spacing = size * 0.2
@@ -135,8 +142,6 @@ enum Paginator {
         case "POEM":
             paragraph.firstLineHeadIndent = m.fontSize * 1.4
             paragraph.headIndent = m.fontSize * 1.4
-        case "PARAGRAPH":
-            paragraph.firstLineHeadIndent = m.fontSize * 1.1
         default:
             break
         }
@@ -147,8 +152,12 @@ enum Paginator {
         ]
     }
 
+    /// Paragraph indent rendered as characters: SwiftUI ignores `firstLineHeadIndent`.
+    static let indentPrefix = "\u{2003}\u{2002}"
+
     static func attributed(kind: String, text: String, settings: ReaderSettings) -> NSAttributedString {
-        NSAttributedString(string: text, attributes: attributes(kind: kind, settings: settings))
+        let body = kind == "PARAGRAPH" ? indentPrefix + text : text
+        return NSAttributedString(string: body, attributes: attributes(kind: kind, settings: settings))
     }
 
     // MARK: - Pagination

@@ -33,8 +33,8 @@ struct Snapshot {
             var settings = ReaderSettings()
             settings.theme = theme
             settings.fontSize = 17
-            settings.marginH = 56
-            settings.marginV = 32
+            settings.marginH = 64
+            settings.marginV = 40
 
             let pages = Paginator.paginate(
                 book: book,

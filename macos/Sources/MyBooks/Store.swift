@@ -26,9 +26,9 @@ struct ReaderNote: Codable, Identifiable, Hashable {
 struct ReaderSettings: Codable, Equatable {
     var fontFamily: Int = 0        // 0 serif, 1 sans, 2 mono
     var fontSize: Double = 17
-    var lineHeight: Double = 1.45
-    var marginH: Double = 56
-    var marginV: Double = 32
+    var lineHeight: Double = 1.55
+    var marginH: Double = 64
+    var marginV: Double = 40
     var theme: Int = 0             // 0 light, 1 sepia, 2 dark
     var justified: Bool = true
 }
