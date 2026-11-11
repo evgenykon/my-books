@@ -24,6 +24,22 @@ struct PageSlicesView: View {
 
     private var palette: ReaderPalette { ReaderPalette.of(settings) }
 
+    private func frameAlignment(for kind: String) -> Alignment {
+        switch kind {
+        case "HEADING1", "HEADING2": return .center
+        case "EPIGRAPH_AUTHOR": return .trailing
+        default: return .leading
+        }
+    }
+
+    private func textAlignment(for kind: String) -> TextAlignment {
+        switch kind {
+        case "HEADING1", "HEADING2": return .center
+        case "EPIGRAPH_AUTHOR": return .trailing
+        default: return .leading
+        }
+    }
+
     private func color(for kind: String) -> Color {
         switch kind {
         case "SUBTITLE", "EPIGRAPH", "EPIGRAPH_AUTHOR", "ANNOTATION":
@@ -39,10 +55,11 @@ struct PageSlicesView: View {
                 let m = Paginator.metrics(kind: slice.kind, settings: settings)
                 Text(swiftUIAttributed(slice.text))
                     .foregroundStyle(color(for: slice.kind))
+                    .multilineTextAlignment(textAlignment(for: slice.kind))
                     .lineSpacing(m.swiftUILineSpacing + Self.extraSpacing * CGFloat(settings.fontSize))
                     .padding(.bottom, m.paragraphSpacing)
                     .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: frameAlignment(for: slice.kind))
                     .contextMenu {
                         Button("Копировать абзац") { onCopy(slice) }
                         Button("Добавить заметку") { onNote(slice) }
