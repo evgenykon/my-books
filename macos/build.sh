@@ -42,3 +42,12 @@ cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || echo "codesign skipped"
 
 echo "Built $APP"
+
+if [ "${2:-}" = "install" ] || [ "${1:-}" = "install" ]; then
+  pkill -x MyBooks 2>/dev/null || true
+  rm -rf "/Applications/MyBooks.app"
+  ditto "$APP" "/Applications/MyBooks.app"
+  xattr -dr com.apple.quarantine "/Applications/MyBooks.app" 2>/dev/null || true
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "/Applications/MyBooks.app"
+  echo "Installed /Applications/MyBooks.app"
+fi

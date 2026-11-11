@@ -58,6 +58,8 @@ struct PageSlicesView: View {
                     .foregroundStyle(color(for: slice.kind))
                     .multilineTextAlignment(textAlignment(for: slice.kind))
                     .lineSpacing(m.swiftUILineSpacing)
+                    .padding(.leading, m.leadingIndent)
+                    .padding(.top, m.spaceBefore)
                     .padding(.bottom, m.paragraphSpacing)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: frameAlignment(for: slice.kind))

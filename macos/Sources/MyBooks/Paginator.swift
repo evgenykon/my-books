@@ -64,7 +64,12 @@ enum Paginator {
         var font: NSFont
         var fontSize: CGFloat
         var targetLineHeight: CGFloat
+        /// Space above a block (chapter headings get a lot of air).
+        var spaceBefore: CGFloat
+        /// Space below a block.
         var paragraphSpacing: CGFloat
+        /// Left inset for quoted blocks such as epigraphs.
+        var leadingIndent: CGFloat
         /// What SwiftUI needs in `.lineSpacing` to reach `targetLineHeight`.
         var swiftUILineSpacing: CGFloat
     }
@@ -73,6 +78,8 @@ enum Paginator {
         var size = CGFloat(settings.fontSize)
         var weight: NSFont.Weight = .regular
         var spacing = size * 0.85
+        var spaceBefore: CGFloat = 0
+        var leadingIndent: CGFloat = 0
         var lineFactor: CGFloat = 1
 
         switch kind {
@@ -80,28 +87,36 @@ enum Paginator {
             size *= 1.5
             weight = .bold
             lineFactor = 1.2
-            spacing = size * 1.3
+            spacing = size * 1.1
+            spaceBefore = size * 2.0
         case "HEADING2":
             size *= 1.28
             weight = .semibold
             lineFactor = 1.15
-            spacing = size * 1.0
+            spacing = size * 0.8
+            spaceBefore = size * 1.5
         case "HEADING3":
             size *= 1.12
             weight = .semibold
-            spacing = size * 0.7
+            spacing = size * 0.6
+            spaceBefore = size * 1.0
         case "SUBTITLE":
             weight = .medium
             spacing = size * 0.5
+            spaceBefore = size * 0.6
         case "EPIGRAPH":
             size *= 0.92
             spacing = size * 0.2
+            spaceBefore = size * 0.9
+            leadingIndent = size * 3.2
         case "EPIGRAPH_AUTHOR":
             size *= 0.88
-            spacing = size * 0.2
+            spacing = size * 1.1
+            leadingIndent = size * 3.2
         case "POEM":
             size *= 0.95
             spacing = size * 0.2
+            leadingIndent = size * 1.4
         default:
             break
         }
@@ -113,7 +128,9 @@ enum Paginator {
             font: font,
             fontSize: size,
             targetLineHeight: target,
+            spaceBefore: spaceBefore,
             paragraphSpacing: spacing,
+            leadingIndent: leadingIndent,
             swiftUILineSpacing: max(0, target - defaultLineHeight)
         )
     }
@@ -224,6 +241,13 @@ enum Paginator {
                 continue
             }
 
+            let blockMetrics = metrics(kind: kind, settings: settings)
+            if blockMetrics.spaceBefore > 0 {
+                if used + blockMetrics.spaceBefore > height - safety {
+                    flush()
+                }
+                used += blockMetrics.spaceBefore
+            }
             let attr = attributed(kind: kind, text: text, settings: settings)
             let total = attr.length
             var start = 0
