@@ -25,6 +25,9 @@ struct MyBooksApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// File opened while the UI is still starting up.
+    static var pendingPath: String?
+
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
         let books = filenames.filter { $0.lowercased().hasSuffix(".fb2") }
         DebugLog.log("open files: \(filenames) -> \(books)")
@@ -36,7 +39,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func application(_ sender: NSApplication, openFile filename: String) -> Bool {
+        DebugLog.log("open file (legacy): \(filename)")
+        guard filename.lowercased().hasSuffix(".fb2") else { return false }
+        NotificationCenter.default.post(name: .myBooksOpenFile, object: filename)
+        return true
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // SwiftUI swallows application(_:openFiles:), so the open-document Apple Event
+        // is handled here directly.
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleOpenDocuments(_:withReply:)),
+            forEventClass: AEEventClass(kCoreEventClass),
+            andEventID: AEEventID(kAEOpenDocuments)
+        )
         NSApp.setActivationPolicy(.regular)
         DispatchQueue.main.async {
             guard let window = NSApp.windows.first else { return }
@@ -52,6 +70,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
+    @objc private func handleOpenDocuments(_ event: NSAppleEventDescriptor, withReply reply: NSAppleEventDescriptor) {
+        var paths: [String] = []
+        if let list = event.paramDescriptor(forKeyword: keyDirectObject) {
+            let count = max(list.numberOfItems, 1)
+            for index in 1...count {
+                if let value = list.atIndex(index)?.stringValue, let url = URL(string: value) {
+                    paths.append(url.path)
+                }
+            }
+        }
+        DebugLog.log("appleevent open: \(paths)")
+        if let book = paths.first(where: { $0.lowercased().hasSuffix(".fb2") }) {
+            Self.pendingPath = book
+            NotificationCenter.default.post(name: .myBooksOpenFile, object: book)
         }
     }
 
@@ -84,11 +119,20 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.16), value: openRecord)
+        .onOpenURL { url in
+            DebugLog.log("onOpenURL: \(url.path)")
+            openLocalBook(at: url.path)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .myBooksOpenFile)) { note in
             guard let path = note.object as? String else { return }
             openLocalBook(at: path)
         }
         .task {
+            if let pending = AppDelegate.pendingPath {
+                AppDelegate.pendingPath = nil
+                openLocalBook(at: pending)
+                return
+            }
             // `open MyBooks.app --args /path/book.fb2` imports and opens the book.
             guard openRecord == nil else { return }
             let candidates = ProcessInfo.processInfo.arguments.dropFirst()
