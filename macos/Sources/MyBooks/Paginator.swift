@@ -57,7 +57,7 @@ enum Paginator {
         if let raw = ProcessInfo.processInfo.environment["MYBOOKS_HEIGHT_K"], let value = Double(raw) {
             return CGFloat(value)
         }
-        return 0.92
+        return 0.68
     }()
 
     struct BlockMetrics {
@@ -146,6 +146,9 @@ enum Paginator {
             break
         }
 
+        // Only the font and the line spacing travel with the string: SwiftUI applies
+        // alignment/indents itself, and NSParagraphStyle from AttributedString is unreliable.
+        paragraph.lineSpacing = m.swiftUILineSpacing
         return [
             .font: m.font,
             .paragraphStyle: paragraph,

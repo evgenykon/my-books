@@ -53,10 +53,11 @@ struct PageSlicesView: View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(slices) { slice in
                 let m = Paginator.metrics(kind: slice.kind, settings: settings)
-                Text(swiftUIAttributed(slice.text))
+                Text(slice.text.string)
+                    .font(Font(m.font))
                     .foregroundStyle(color(for: slice.kind))
                     .multilineTextAlignment(textAlignment(for: slice.kind))
-                    .lineSpacing(m.swiftUILineSpacing + Self.extraSpacing * CGFloat(settings.fontSize))
+                    .lineSpacing(m.swiftUILineSpacing)
                     .padding(.bottom, m.paragraphSpacing)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: frameAlignment(for: slice.kind))
