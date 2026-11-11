@@ -11,7 +11,8 @@ if [ ! -d "Shared.framework" ]; then
 fi
 
 mkdir -p .build
-mapfile -t SRC < <(find Sources/MyBooks -name '*.swift' | sort)
+SRC=()
+while IFS= read -r f; do SRC+=("$f"); done < <(find Sources/MyBooks -name '*.swift' | sort)
 echo "Sources: ${#SRC[@]} files"
 
 build_arch() {
