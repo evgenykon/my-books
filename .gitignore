@@ -1,0 +1,12 @@
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+.DS_Store
+.kotlin/
+xcuserdata/
+*.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+macos/Shared.xcframework/
+macos/.build/
+dist/
