@@ -166,6 +166,9 @@ enum Paginator {
         // Only the font and the line spacing travel with the string: SwiftUI applies
         // alignment/indents itself, and NSParagraphStyle from AttributedString is unreliable.
         paragraph.lineSpacing = m.swiftUILineSpacing
+        // Quoted blocks are indented from the left; measuring must use the same width.
+        paragraph.headIndent = m.leadingIndent
+        paragraph.firstLineHeadIndent = m.leadingIndent
         return [
             .font: m.font,
             .paragraphStyle: paragraph,
@@ -218,7 +221,7 @@ enum Paginator {
         let height = pageSize.height
         guard width > 40, height > 40 else { return [] }
 
-        let safety = lineHeight(settings) * 0.3
+        let safety = lineHeight(settings) * 0.95
         var pages: [ReaderPage] = []
         var slices: [PageSlice] = []
         var used: CGFloat = 0
