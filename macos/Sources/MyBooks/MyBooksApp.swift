@@ -25,6 +25,17 @@ struct MyBooksApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    func application(_ sender: NSApplication, openFiles filenames: [String]) {
+        let books = filenames.filter { $0.lowercased().hasSuffix(".fb2") }
+        DebugLog.log("open files: \(filenames) -> \(books)")
+        if let first = books.first {
+            NotificationCenter.default.post(name: .myBooksOpenFile, object: first)
+            sender.reply(toOpenOrPrint: .success)
+        } else {
+            sender.reply(toOpenOrPrint: books.isEmpty && filenames.isEmpty ? .failure : .success)
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         DispatchQueue.main.async {
@@ -51,6 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension Notification.Name {
     static let myBooksImport = Notification.Name("myBooksImport")
+    static let myBooksOpenFile = Notification.Name("myBooksOpenFile")
 }
 
 struct RootView: View {
@@ -72,6 +84,10 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.16), value: openRecord)
+        .onReceive(NotificationCenter.default.publisher(for: .myBooksOpenFile)) { note in
+            guard let path = note.object as? String else { return }
+            openLocalBook(at: path)
+        }
         .task {
             // `open MyBooks.app --args /path/book.fb2` imports and opens the book.
             guard openRecord == nil else { return }
@@ -80,15 +96,7 @@ struct RootView: View {
                 DebugLog.log("launch: no book argument")
                 return
             }
-            let url = URL(fileURLWithPath: path)
-            DebugLog.log("launch: opening \(url.lastPathComponent)")
-            let existing = store.books.first { $0.fileName == url.lastPathComponent }
-            if existing == nil {
-                store.importBook(at: url)
-            }
-            if let record = store.books.first(where: { $0.fileName == url.lastPathComponent }) ?? store.books.first {
-                openRecord = record
-            }
+            openLocalBook(at: path)
         }
         .alert("Ошибка", isPresented: Binding(
             get: { store.lastError != nil },
@@ -97,6 +105,25 @@ struct RootView: View {
             Button("OK") { store.lastError = nil }
         } message: {
             Text(store.lastError ?? "")
+        }
+    }
+
+    /// Imports (if needed) and opens a book file that came from Finder or `open`.
+    private func openLocalBook(at path: String) {
+        let url = URL(fileURLWithPath: path)
+        guard FileManager.default.fileExists(atPath: path) else {
+            DebugLog.log("open: missing file \(path)")
+            return
+        }
+        DebugLog.log("open: \(url.lastPathComponent)")
+        let known = store.books.first { $0.fileName == url.lastPathComponent }
+        if known == nil {
+            let accessed = url.startAccessingSecurityScopedResource()
+            store.importBook(at: url)
+            if accessed { url.stopAccessingSecurityScopedResource() }
+        }
+        if let record = store.books.first(where: { $0.fileName == url.lastPathComponent }) ?? store.books.first {
+            openRecord = record
         }
     }
 }

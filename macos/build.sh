@@ -38,6 +38,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/MyBooks "$APP/Contents/MacOS/MyBooks"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || echo "codesign skipped"
 
 echo "Built $APP"
