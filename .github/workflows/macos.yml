@@ -1,0 +1,57 @@
+name: macOS
+
+on:
+  push:
+    branches: [main, "macos/**", "core/**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Build Kotlin/Native XCFramework
+        run: gradle --no-daemon :shared:assembleSharedReleaseXCFramework
+
+      - name: Place XCFramework
+        run: |
+          FRAMEWORK="$(find shared/build -name 'Shared.xcframework' -type d | head -1)"
+          echo "found: $FRAMEWORK"
+          rm -rf macos/Shared.xcframework
+          cp -R "$FRAMEWORK" macos/Shared.xcframework
+
+      - name: Build app bundle
+        run: chmod +x macos/build.sh && ./macos/build.sh release
+
+      - name: Zip app
+        run: |
+          cd macos/dist
+          ditto -c -k --sequesterRsrc --keepParent MyBooks.app MyBooks-macos.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mybooks-macos-app
+          path: macos/dist/MyBooks-macos.zip
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shared-xcframework
+          path: macos/Shared.xcframework
+          if-no-files-found: warn

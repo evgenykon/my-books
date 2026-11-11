@@ -93,7 +93,7 @@ class Fb2ParserTest {
             0x3C, 0x61, 0x3E, // <a>
             0xCF, 0xF0, 0xE8, 0xE2, 0xE5, 0xF2, // Привет
             0x3C, 0x2F, 0x61, 0x3E,
-        )
+        ).map { it.toByte() }.toByteArray()
         val text = Charsets.decode(cp1251, "windows-1251")
         assertTrue(text.contains("Привет"), text)
     }
