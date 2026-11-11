@@ -89,7 +89,7 @@ class Fb2ParserTest {
 
     @Test
     fun decodesCp1251() {
-        val cp1251 = byteArrayOf(
+        val cp1251 = intArrayOf(
             0x3C, 0x61, 0x3E, // <a>
             0xCF, 0xF0, 0xE8, 0xE2, 0xE5, 0xF2, // Привет
             0x3C, 0x2F, 0x61, 0x3E,
