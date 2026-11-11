@@ -59,6 +59,7 @@ struct PagingEventBridge: NSViewRepresentable {
         private var keyMonitor: Any?
         private var accumulated: CGFloat = 0
         private var lastFlip = Date.distantPast
+        private var flippedThisGesture = false
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
@@ -103,11 +104,38 @@ struct PagingEventBridge: NSViewRepresentable {
             let dx = event.scrollingDeltaX
             let dy = event.scrollingDeltaY
             let delta = abs(dx) > abs(dy) ? dx : dy
-            if delta == 0 { return false }
+            let isTrackpad = event.hasPreciseScrollingDeltas && !(event.phase == [] && event.momentumPhase == [])
+
+            if isTrackpad {
+                // One page per swipe: the gesture may only turn the page once.
+                switch event.phase {
+                case .began:
+                    accumulated = 0
+                    flippedThisGesture = false
+                case .ended, .cancelled:
+                    accumulated = 0
+                    flippedThisGesture = false
+                    return true
+                default:
+                    break
+                }
+                if event.momentumPhase != [] { return true }
+                guard delta != 0 else { return true }
+                accumulated += delta
+                let threshold: CGFloat = 40
+                if !flippedThisGesture, abs(accumulated) >= threshold {
+                    if accumulated < 0 { onNext() } else { onPrevious() }
+                    flippedThisGesture = true
+                    accumulated = 0
+                }
+                return true
+            }
+
+            // Classic mouse wheel: discrete ticks, so rely on a cooldown.
+            guard delta != 0 else { return false }
             accumulated += delta
-            let threshold: CGFloat = event.hasPreciseScrollingDeltas ? 70 : 5
             let now = Date()
-            if abs(accumulated) >= threshold, now.timeIntervalSince(lastFlip) > 0.25 {
+            if abs(accumulated) >= 3, now.timeIntervalSince(lastFlip) > 0.45 {
                 if accumulated < 0 { onNext() } else { onPrevious() }
                 accumulated = 0
                 lastFlip = now
