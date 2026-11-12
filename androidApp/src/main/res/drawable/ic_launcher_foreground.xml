@@ -43,5 +43,5 @@
     <!-- bookmark ribbon -->
     <path
         android:fillColor="#B8492F"
-        android:pathData="M64,30 L73,30 L73,50 L68.5,45.5 L64,50 Z" />
+        android:pathData="M64,30 L73,30 L73,44 L68.5,40 L64,44 Z" />
 </vector>
