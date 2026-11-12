@@ -38,8 +38,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.evgenykon.mybooks.core.BlockKind
@@ -53,6 +55,7 @@ import io.github.evgenykon.mybooks.data.ReaderSettings
 import io.github.evgenykon.mybooks.reader.PageLine
 import io.github.evgenykon.mybooks.reader.ReaderPage
 import io.github.evgenykon.mybooks.reader.pageIndexOfBlock
+import io.github.evgenykon.mybooks.reader.metricsFor
 import io.github.evgenykon.mybooks.reader.paginate
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -98,9 +101,9 @@ fun ReaderScreen(
                     pageWidthPx = pageWidth,
                     pageHeightPx = pageHeight,
                     measurer = measurer,
+                    settings = settings,
+                    density = density,
                     styleFor = { kind -> styleFor(kind, settings, palette) },
-                    paragraphSpacingPx = paragraphSpacing,
-                    emptyLinePx = emptyLine,
                 )
             }
 
@@ -122,8 +125,8 @@ fun ReaderScreen(
                 viewModel.updatePosition(
                     record = record,
                     blockIndex = page.firstBlockIndex,
-                    charOffset = page.firstOffset,
-                    percent = ReadingProgress.percent(b, Position(page.firstBlockIndex, page.firstOffset)),
+                    charOffset = 0,
+                    percent = ReadingProgress.percent(b, Position(page.firstBlockIndex, 0)),
                 )
             }
 
@@ -135,7 +138,7 @@ fun ReaderScreen(
             Column(Modifier.fillMaxSize()) {
                 val currentPage = pages.getOrNull(pageIndex)
                 val percent = book?.let { b ->
-                    currentPage?.let { ReadingProgress.percent(b, Position(it.firstBlockIndex, it.firstOffset)) }
+                    currentPage?.let { ReadingProgress.percent(b, Position(it.firstBlockIndex, 0)) }
                 } ?: record.percent
 
                 ReaderHeader(
@@ -172,7 +175,7 @@ fun ReaderScreen(
                                     .padding(horizontal = settings.marginH.dp, vertical = settings.marginV.dp),
                             ) {
                                 current.lines.forEach { line ->
-                                    ParagraphView(line, settings, palette)
+                                    PageLineView(line, settings, palette, density)
                                 }
                             }
                         }
@@ -308,22 +311,33 @@ private fun ReaderHeader(
 }
 
 @Composable
-private fun ParagraphView(line: PageLine, settings: ReaderSettings, palette: ReaderPalette) {
-    val base = styleFor(line.kind, settings, palette)
-    val style: TextStyle = if (line.kind == BlockKind.PARAGRAPH && line.offset == 0) {
-        base.copy(textIndent = TextIndent(firstLine = (settings.fontSize * 1.1f).sp))
-    } else {
-        base
+private fun PageLineView(
+    line: PageLine,
+    settings: ReaderSettings,
+    palette: ReaderPalette,
+    density: Density,
+) {
+    val m = metricsFor(line.kind, settings, density)
+    val style = styleFor(line.kind, settings, palette)
+    val alignment = when (line.kind) {
+        BlockKind.HEADING1, BlockKind.HEADING2 -> TextAlign.Center
+        BlockKind.EPIGRAPH_AUTHOR -> TextAlign.End
+        else -> TextAlign.Start
     }
-    Column {
-        Text(text = line.text, style = style, modifier = Modifier.fillMaxWidth())
-        when (line.kind) {
-            BlockKind.HEADING1 -> Spacer(Modifier.height((settings.fontSize * 1.0f).dp))
-            BlockKind.HEADING2 -> Spacer(Modifier.height((settings.fontSize * 0.7f).dp))
-            BlockKind.HEADING3, BlockKind.SUBTITLE -> Spacer(Modifier.height((settings.fontSize * 0.4f).dp))
-            BlockKind.EPIGRAPH, BlockKind.EPIGRAPH_AUTHOR -> Spacer(Modifier.height((settings.fontSize * 0.2f).dp))
-            BlockKind.EMPTY -> Spacer(Modifier.height((settings.fontSize * 0.6f).dp))
-            else -> Spacer(Modifier.height((settings.fontSize * 0.45f).dp))
-        }
+    if (line.isFirstOfBlock && m.spaceBeforePx > 0f) {
+        Spacer(Modifier.height(with(density) { m.spaceBeforePx.toDp() }))
+    }
+    Text(
+        text = line.text,
+        style = style.copy(textAlign = alignment),
+        maxLines = 1,
+        softWrap = false,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = with(density) { m.leadingIndentPx.toDp() })
+            .height(with(density) { m.lineHeightPx.toDp() }),
+    )
+    if (line.isLastOfBlock && m.spaceAfterPx > 0f) {
+        Spacer(Modifier.height(with(density) { m.spaceAfterPx.toDp() }))
     }
 }
