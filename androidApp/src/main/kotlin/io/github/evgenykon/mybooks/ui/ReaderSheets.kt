@@ -127,28 +127,25 @@ fun NotesSheet(
                             .clickable { onSelect(note) }
                             .padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Quote first and in full: it is what the note is attached to.
+                        if (note.quote.isNotBlank() && note.quote != note.text) {
+                            Text(
+                                text = "«" + note.quote.trim() + "»",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = palette.secondary,
+                                modifier = Modifier.padding(bottom = 4.dp),
+                            )
+                        }
+                        Row(verticalAlignment = Alignment.Top) {
                             Text(
                                 text = note.text,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = palette.text,
-                                maxLines = 3,
-                                overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f),
                             )
                             IconButton(onClick = { onDelete(note) }) {
                                 Icon(Icons.Filled.Delete, contentDescription = "Удалить", tint = palette.secondary)
                             }
-                        }
-                        if (note.quote.isNotBlank() && note.quote != note.text) {
-                            Text(
-                                text = "«" + note.quote.trim() + "»",
-                                modifier = Modifier.padding(top = 2.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = palette.secondary,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
                         }
                     }
                     HorizontalDivider(color = palette.secondary.copy(alpha = 0.15f))

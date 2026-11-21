@@ -163,13 +163,20 @@ fun NotesPanel(
                             .clickable { onSelect(note) }
                             .padding(start = 20.dp, end = 6.dp, top = 12.dp, bottom = 12.dp),
                     ) {
+                        // Quote first and in full (no line limit): it is the anchor of the note.
+                        if (note.quote.isNotBlank() && note.quote != note.text) {
+                            Text(
+                                text = "«" + note.quote.trim() + "»",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = palette.secondary,
+                                modifier = Modifier.padding(bottom = 4.dp),
+                            )
+                        }
                         Row(verticalAlignment = Alignment.Top) {
                             Text(
                                 text = note.text,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = palette.text,
-                                maxLines = 3,
-                                overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f),
                             )
                             IconButton(onClick = { onDelete(note) }) {
@@ -179,18 +186,6 @@ fun NotesPanel(
                                     tint = palette.secondary,
                                 )
                             }
-                        }
-                        // Quote under the note, always clipped: a long quotation must not
-                        // push the rest of the list around.
-                        if (note.quote.isNotBlank() && note.quote != note.text) {
-                            Text(
-                                text = "«" + note.quote.trim() + "»",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = palette.secondary,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(top = 2.dp),
-                            )
                         }
                     }
                     HorizontalDivider(color = palette.secondary.copy(alpha = 0.12f))

@@ -84,18 +84,17 @@ struct NotesPanel: View {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         ForEach(notes) { note in
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(note.text)
-                                    .font(.system(size: 12))
-                                    .lineLimit(3)
-                                    .truncationMode(.tail)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                // Quote first and in full: it anchors the note to the text.
                                 if !note.quote.isEmpty && note.quote != note.text {
                                     Text("«" + note.quote + "»")
                                         .font(.system(size: 11))
                                         .foregroundStyle(.secondary)
-                                        .lineLimit(2)
-                                        .truncationMode(.tail)
+                                        .fixedSize(horizontal: false, vertical: true)
                                 }
+                                Text(note.text)
+                                    .font(.system(size: 12))
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                                 HStack(spacing: 10) {
                                     Button("Перейти") { onSelect(note) }
                                         .buttonStyle(.link)
