@@ -183,6 +183,8 @@ class LibraryViewModel(
         vault.scheduleSync()
     }
 
+    fun setSettings(settings: ReaderSettings) = updateSettings { settings }
+
     fun updateSettings(transform: (ReaderSettings) -> ReaderSettings) {
         val next = transform(_settings.value)
         _settings.value = next

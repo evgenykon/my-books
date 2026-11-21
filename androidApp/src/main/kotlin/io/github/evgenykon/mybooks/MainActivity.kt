@@ -18,7 +18,9 @@ import io.github.evgenykon.mybooks.ui.LibraryScreen
 import io.github.evgenykon.mybooks.ui.LibraryViewModel
 import io.github.evgenykon.mybooks.data.AndroidSecrets
 import io.github.evgenykon.mybooks.ui.ReaderScreen
+import io.github.evgenykon.mybooks.ui.SettingsSheet
 import io.github.evgenykon.mybooks.ui.VaultScreen
+import io.github.evgenykon.mybooks.ui.paletteOf
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,13 +45,27 @@ fun MyBooksApp() {
 
     var openBookId by rememberSaveable { mutableStateOf<String?>(null) }
     var showVaults by rememberSaveable { mutableStateOf(false) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
     val openBook = books.firstOrNull { it.id == openBookId }
 
-    BackHandler(enabled = openBook != null || showVaults) {
-        if (showVaults) showVaults = false else openBookId = null
+    BackHandler(enabled = openBook != null || showVaults || showSettings) {
+        when {
+            showSettings -> showSettings = false
+            showVaults -> showVaults = false
+            else -> openBookId = null
+        }
     }
 
     val vaultState by viewModel.vault.state.collectAsStateWithLifecycle()
+
+    if (showSettings) {
+        SettingsSheet(
+            settings = settings,
+            palette = paletteOf(settings),
+            onChange = viewModel::setSettings,
+            onDismiss = { showSettings = false },
+        )
+    }
 
     if (showVaults) {
         VaultScreen(
@@ -85,7 +101,7 @@ fun MyBooksApp() {
         LibraryScreen(
             viewModel = viewModel,
             onOpenBook = { openBookId = it.id },
-            onOpenSettings = { },
+            onOpenSettings = { showSettings = true },
             onOpenVaults = {
                 showVaults = true
                 viewModel.vault.refreshVaults()
