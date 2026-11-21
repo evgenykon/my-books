@@ -8,7 +8,11 @@ import io.github.evgenykon.mybooks.data.AndroidSecrets
 import io.github.evgenykon.mybooks.data.AndroidVaultManager
 import io.github.evgenykon.mybooks.data.BookRecord
 import io.github.evgenykon.mybooks.data.LibraryRepository
+import io.github.evgenykon.mybooks.BuildConfig
 import io.github.evgenykon.mybooks.data.ReaderSettings
+import io.github.evgenykon.mybooks.update.AvailableUpdate
+import io.github.evgenykon.mybooks.update.UpdateChecker
+import io.github.evgenykon.mybooks.update.UpdateInstaller
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,6 +26,12 @@ class LibraryViewModel(
 ) : ViewModel() {
 
     /** Encrypted vaults in GitHub branches; every change is pushed to the active one. */
+    private val _update = MutableStateFlow<AvailableUpdate?>(null)
+    val update: StateFlow<AvailableUpdate?> = _update.asStateFlow()
+
+    private val _updateProgress = MutableStateFlow<Float?>(null)
+    val updateProgress: StateFlow<Float?> = _updateProgress.asStateFlow()
+
     val vault = AndroidVaultManager(
         library = repo,
         secrets = secrets,
@@ -126,6 +136,45 @@ class LibraryViewModel(
         _notes.value = _notes.value + note
         repo.writeNotes(_notes.value)
         vault.scheduleSync()
+    }
+
+    /** Asks GitHub for the newest release; the result is shown as a banner in the library. */
+    fun checkForUpdates() {
+        viewModelScope.launch {
+            val found = withContext(Dispatchers.IO) {
+                runCatching { UpdateChecker.check(BuildConfig.VERSION_NAME) }.getOrNull()
+            }
+            _update.value = found
+        }
+    }
+
+    /** Downloads the release APK and opens the system installer. */
+    fun installUpdate(context: android.content.Context) {
+        val update = _update.value ?: return
+        if (!UpdateInstaller.canInstall(context)) {
+            _updateProgress.value = null
+            UpdateInstaller.requestInstallPermission(context)
+            _message.value = "Разрешите установку из этого приложения и нажмите «Обновить» ещё раз"
+            return
+        }
+        viewModelScope.launch {
+            _updateProgress.value = 0f
+            try {
+                val file = UpdateInstaller.download(context, update.apkUrl, update.apkSize) { progress ->
+                    _updateProgress.value = progress
+                }
+                _updateProgress.value = null
+                UpdateInstaller.install(context, file)
+            } catch (e: Throwable) {
+                _updateProgress.value = null
+                _message.value = "Не удалось скачать обновление: ${e.message}"
+            }
+        }
+    }
+
+    fun dismissUpdate() {
+        _update.value = null
+        _updateProgress.value = null
     }
 
     fun deleteNote(note: BookNote) {

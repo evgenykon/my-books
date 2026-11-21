@@ -13,19 +13,35 @@ android {
         applicationId = "io.github.evgenykon.mybooks"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 4
-        versionName = "0.3.0"
+        versionCode = 5
+        versionName = "0.3.1"
+    }
+
+    // A committed personal keystore: the app is sideloaded, and in-app updates only install
+    // over the previous version when every build is signed with the same key.
+    signingConfigs {
+        create("stable") {
+            storeFile = file("signing/mybooks-release.jks")
+            storePassword = "mybooks-release"
+            keyAlias = "mybooks"
+            keyPassword = "mybooks-release"
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("stable")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("stable")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     compileOptions {

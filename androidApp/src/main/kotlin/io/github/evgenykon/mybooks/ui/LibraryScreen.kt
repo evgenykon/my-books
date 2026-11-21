@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Tune
@@ -33,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -49,6 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.evgenykon.mybooks.data.BookRecord
+import io.github.evgenykon.mybooks.update.AvailableUpdate
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -66,6 +69,10 @@ fun LibraryScreen(
     val importing by viewModel.importing.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+    val update by viewModel.update.collectAsStateWithLifecycle()
+    val updateProgress by viewModel.updateProgress.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) { viewModel.checkForUpdates() }
     val context = LocalContext.current
     var pendingDelete by remember { mutableStateOf<BookRecord?>(null) }
 
@@ -111,7 +118,16 @@ fun LibraryScreen(
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            update?.let { available ->
+                UpdateBanner(
+                    update = available,
+                    progress = updateProgress,
+                    onInstall = { viewModel.installUpdate(context) },
+                    onDismiss = viewModel::dismissUpdate,
+                )
+            }
+        Box(Modifier.fillMaxSize()) {
             if (books.isEmpty()) {
                 Column(
                     Modifier.fillMaxSize().padding(32.dp),
@@ -144,6 +160,7 @@ fun LibraryScreen(
             if (importing) {
                 CircularProgressIndicator(Modifier.align(Alignment.TopCenter).padding(top = 12.dp))
             }
+        }
         }
     }
 
@@ -216,4 +233,57 @@ private fun BookRow(book: BookRecord, onClick: () -> Unit, onDelete: () -> Unit)
 private fun readAll(context: Context, uri: android.net.Uri): ByteArray {
     return context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
         ?: throw IllegalStateException("Не удалось прочитать файл")
+}
+
+/** Banner that reports a newer release and drives the self-update. */
+@Composable
+private fun UpdateBanner(
+    update: AvailableUpdate,
+    progress: Float?,
+    onInstall: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = "Доступно обновление ${update.version}",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                    Text(
+                        text = if (progress != null) {
+                            "Скачивание… ${(progress * 100).toInt()}%"
+                        } else {
+                            "Скачается APK из релиза на GitHub"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
+                if (progress == null) {
+                    TextButton(onClick = onInstall) { Text("Обновить") }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Filled.Close, contentDescription = "Скрыть")
+                    }
+                } else {
+                    CircularProgressIndicator(
+                        modifier = Modifier.height(20.dp).padding(end = 8.dp),
+                        strokeWidth = 2.dp,
+                    )
+                }
+            }
+            if (progress != null) {
+                Spacer(Modifier.height(6.dp))
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxWidth().height(3.dp),
+                )
+            }
+        }
+    }
 }
