@@ -42,6 +42,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -337,6 +339,11 @@ fun NoteEditorPanel(
 ) {
     var text by remember(draft) { mutableStateOf("") }
 
+    // Without this the first focusable child (the "Отмена" button) takes focus and a space
+    // press activates it, closing the editor.
+    val inputFocus = remember { FocusRequester() }
+    LaunchedEffect(draft) { inputFocus.requestFocus() }
+
     Column(Modifier.width(520.dp).padding(22.dp)) {
         Text("Новая заметка", style = MaterialTheme.typography.titleMedium, color = palette.text)
         Spacer(Modifier.height(10.dp))
@@ -355,7 +362,7 @@ fun NoteEditorPanel(
             minLines = 3,
             maxLines = 8,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().focusRequester(inputFocus),
         )
         Spacer(Modifier.height(12.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
