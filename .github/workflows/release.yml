@@ -59,19 +59,25 @@ jobs:
           cp -R "$ARM" macos/Shared.framework
           lipo -create "$ARM/Shared" "$INTEL/Shared" -output macos/Shared.framework/Shared
       - name: Build app bundle
+        shell: bash
         run: |
+          set -o pipefail
           chmod +x macos/build.sh
           ./macos/build.sh release 2>&1 | tee macos-build.log
+      # Logs of a failed run are only visible to signed-in users, while annotations are
+      # public: publish the compiler output so a failure can be diagnosed from the run page.
       - name: Report swift errors
         if: failure()
+        shell: bash
         run: |
-          if [ -f macos-build.log ]; then
-            echo "=== swift errors ==="
-            grep -E "(error|warning): " macos-build.log | head -40 || true
-            grep -E "error: " macos-build.log | head -15 | while IFS= read -r line; do
-              echo "::error title=Swift::$line"
-            done
-          fi
+          [ -f macos-build.log ] || exit 0
+          echo "=== build log tail ==="
+          tail -n 40 macos-build.log || true
+          tail -n 12 macos-build.log | while IFS= read -r line; do
+            line="${line//'%'/'%25'}"
+            line="${line//$'\r'/''}"
+            [ -n "$line" ] && echo "::error title=swift-build::${line}"
+          done
 
       - name: Zip app
         run: cd macos/dist && ditto -c -k --sequesterRsrc --keepParent MyBooks.app my-books-macos.zip

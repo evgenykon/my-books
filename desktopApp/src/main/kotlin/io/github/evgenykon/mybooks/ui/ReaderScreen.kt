@@ -7,9 +7,6 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.ContextMenuDataProvider
-import androidx.compose.foundation.ContextMenuItem
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
@@ -34,6 +32,8 @@ import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,6 +49,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -58,6 +67,7 @@ import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -112,6 +122,7 @@ fun ReaderScreen(
     var panel by remember { mutableStateOf<ReaderPanel?>(null) }
     var noteDraft by remember { mutableStateOf<NoteDraft?>(null) }
     var wheel by remember { mutableStateOf(0f) }
+    var ctxMenu by remember { mutableStateOf<ContextMenuTarget?>(null) }
 
     LaunchedEffect(record.id) {
         state.markOpened(record)
@@ -269,20 +280,43 @@ fun ReaderScreen(
                             SelectionContainer {
                                 Column(Modifier.fillMaxWidth()) {
                                     page.lines.forEach { line ->
-                                        val blockText = book?.blocks?.getOrNull(line.blockIndex)?.text.orEmpty()
                                         PageLineView(
                                             line = line,
                                             settings = settings,
                                             palette = palette,
                                             density = density,
-                                            blockText = blockText,
-                                            onCopy = { text -> clipboard.setText(AnnotatedString(text)) },
-                                            onNote = { text -> noteDraft = NoteDraft(line.blockIndex, text) },
+                                            onContextMenu = { position, blockIndex, text ->
+                                                ctxMenu = ContextMenuTarget(
+                                                    position = position,
+                                                    blockIndex = blockIndex,
+                                                    blockText = text.ifBlank {
+                                                        book?.blocks?.getOrNull(blockIndex)?.text.orEmpty()
+                                                    },
+                                                )
+                                            },
                                         )
                                     }
                                 }
                             }
                         }
+                    }
+
+                    // Kept outside SelectionContainer: a popup inside it inherits the
+                    // selection registrar but lives in another window, which crashed
+                    // coordinate mapping ("layouts are not part of the same hierarchy").
+                    ctxMenu?.let { menu ->
+                        ReaderContextMenu(
+                            target = menu,
+                            onCopy = {
+                                clipboard.setText(AnnotatedString(it))
+                                ctxMenu = null
+                            },
+                            onNote = {
+                                noteDraft = NoteDraft(menu.blockIndex, it)
+                                ctxMenu = null
+                            },
+                            onDismiss = { ctxMenu = null },
+                        )
                     }
                 }
             }
@@ -480,16 +514,14 @@ private fun ReaderFooter(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun PageLineView(
     line: PageLine,
     settings: ReaderSettings,
     palette: ReaderPalette,
     density: Density,
-    blockText: String,
-    onCopy: (String) -> Unit,
-    onNote: (String) -> Unit,
+    onContextMenu: (absolute: Offset, blockIndex: Int, text: String) -> Unit,
 ) {
     val m = metricsFor(line.kind, settings, density)
     val style = styleFor(line.kind, settings, palette)
@@ -503,31 +535,95 @@ private fun PageLineView(
         Spacer(Modifier.height(with(density) { m.spaceBeforePx.toDp() }))
     }
 
-    // ContextMenuDataProvider only contributes items to the menu the text already shows on
-    // right click — it does not re-compose the content in a popup, so SelectionContainer
-    // keeps working (a ContextMenuArea here broke selection with "layouts are not part of
-    // the same hierarchy").
-    ContextMenuDataProvider(
-        items = {
-            listOf(
-                ContextMenuItem("Копировать абзац") { onCopy(blockText.ifBlank { line.text }) },
-                ContextMenuItem("Добавить заметку") { onNote(blockText.ifBlank { line.text }) },
-            )
-        },
-    ) {
-        Text(
-            text = line.text,
-            style = style.copy(textAlign = alignment),
-            maxLines = 1,
-            softWrap = false,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = with(density) { m.leadingIndentPx.toDp() })
-                .height(with(density) { m.lineHeightPx.toDp() }),
-        )
-    }
+    var origin by remember { mutableStateOf(Offset.Zero) }
+
+    Text(
+        text = line.text,
+        style = style.copy(textAlign = alignment),
+        maxLines = 1,
+        softWrap = false,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = with(density) { m.leadingIndentPx.toDp() })
+            .height(with(density) { m.lineHeightPx.toDp() })
+            // Coordinates of the same node that reports the pointer position, so
+            // origin + position is the exact window point of the click.
+            .onGloballyPositioned { origin = it.positionInRoot() }
+            // Right click: consume the press so the text does not start its own (broken for
+            // popups) selection, and report where it happened.
+            .onPointerEvent(PointerEventType.Press) { event ->
+                if (event.button == PointerButton.Secondary) {
+                    val position = event.changes.first().position
+                    onContextMenu(origin + position, line.blockIndex, "")
+                    event.changes.forEach { it.consume() }
+                }
+            },
+    )
 
     if (line.isLastOfBlock && m.spaceAfterPx > 0f) {
         Spacer(Modifier.height(with(density) { m.spaceAfterPx.toDp() }))
+    }
+}
+
+/** Paragraph menu opened by a right click: window position and the paragraph it acts on. */
+private data class ContextMenuTarget(
+    val position: Offset,
+    val blockIndex: Int,
+    val blockText: String,
+)
+
+/**
+ * Paragraph menu anchored at the exact window position of the right click.
+ *
+ * A bare popup with a custom [PopupPositionProvider] is used instead of DropdownMenu: the
+ * menu must not be anchored to a layout node (the page column is centred, and offsets from
+ * it landed half a window away).
+ */
+@Composable
+private fun ReaderContextMenu(
+    target: ContextMenuTarget,
+    onCopy: (String) -> Unit,
+    onNote: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Popup(
+        popupPositionProvider = remember(target) {
+            object : PopupPositionProvider {
+                override fun calculatePosition(
+                    anchorBounds: IntRect,
+                    windowSize: IntSize,
+                    layoutDirection: LayoutDirection,
+                    popupContentSize: IntSize,
+                ): IntOffset {
+                    val x = target.position.x.toInt()
+                        .coerceIn(8, (windowSize.width - popupContentSize.width - 8).coerceAtLeast(8))
+                    val y = target.position.y.toInt()
+                        .coerceIn(8, (windowSize.height - popupContentSize.height - 8).coerceAtLeast(8))
+                    return IntOffset(x, y)
+                }
+            }
+        },
+        onDismissRequest = onDismiss,
+        focusable = true,
+    ) {
+        MaterialTheme {
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                tonalElevation = 3.dp,
+                shadowElevation = 8.dp,
+                color = MaterialTheme.colorScheme.surface,
+            ) {
+                Column(Modifier.width(220.dp).padding(vertical = 6.dp)) {
+                    DropdownMenuItem(
+                        text = { Text("Копировать абзац") },
+                        onClick = { onCopy(target.blockText) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Добавить заметку") },
+                        onClick = { onNote(target.blockText) },
+                    )
+                }
+            }
+        }
     }
 }
