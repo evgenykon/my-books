@@ -35,24 +35,48 @@ jobs:
         run: gradle --no-daemon :desktopApp:packageMsi
 
 
-      # Self-signed code-signing certificate: properties show the publisher, and browsers
-      # treat the file a bit more kindly (reputation still has to be earned).
+      # Self-signed Authenticode signature: the publisher field gets filled (trust the
+      # published mybooks.cer once to remove the "unknown publisher" prompt). A paid OV/EV
+      # certificate is still the only way to silence SmartScreen completely.
       - name: Sign Windows binaries
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Continue'
           $pfx = "desktopApp/signing/mybooks.pfx"
-          $sec = ConvertTo-SecureString "mybooks-sign" -Force -AsPlainText
-          $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($pfx, $sec)
+          $pass = "mybooks-sign"
           $targets = @()
           $exe = "desktopApp/build/compose/binaries/main/app/MyBooks/MyBooks.exe"
           if (Test-Path $exe) { $targets += (Resolve-Path $exe).Path }
           $targets += Get-ChildItem "desktopApp/build/compose/binaries/main/msi/*.msi" -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
           if (-not $targets) { Write-Host "nothing to sign"; exit 0 }
+
+          $signtool = $null
+          $kits = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
+          if (Test-Path $kits) {
+            $signtool = Get-ChildItem $kits -Directory | Sort-Object Name -Descending |
+              ForEach-Object { Join-Path $_.FullName "x64\signtool.exe" } |
+              Where-Object { Test-Path $_ } | Select-Object -First 1
+          }
+          Write-Host ("signtool: " + $signtool)
+
           foreach ($t in $targets) {
-            $result = Set-AuthenticodeSignature -FilePath $t -Certificate $cert `
-              -TimestampServer "http://timestamp.digicert.com" -HashAlgorithm SHA256
-            Write-Host ("signed {0} -> {1}" -f $t, $result.Status)
-            if ($result.Status -ne 'Valid') { Write-Host ($result.StatusMessage) }
+            $ok = $false
+            if ($signtool) {
+              & $signtool sign /f $pfx /p $pass /fd SHA256 /td SHA256 /tr "http://timestamp.digicert.com" /d "My Books" $t
+              $ok = ($LASTEXITCODE -eq 0)
+              Write-Host ("signtool exit " + $LASTEXITCODE + " for " + $t)
+            }
+            if (-not $ok) {
+              try {
+                $sec = ConvertTo-SecureString $pass -Force -AsPlainText
+                $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($pfx, $sec)
+                $r = Set-AuthenticodeSignature -FilePath $t -Certificate $cert `
+                  -TimestampServer "http://timestamp.digicert.com" -HashAlgorithm SHA256
+                Write-Host ("powershell signing " + $r.Status + " for " + $t)
+              } catch {
+                Write-Host ("signing failed for " + $t + ": " + $_)
+              }
+            }
           }
 
       - name: Zip portable bundle
