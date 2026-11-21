@@ -168,6 +168,8 @@ fun NotesPanel(
                                 text = note.text,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = palette.text,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f),
                             )
                             IconButton(onClick = { onDelete(note) }) {
@@ -178,13 +180,16 @@ fun NotesPanel(
                                 )
                             }
                         }
+                        // Quote under the note, always clipped: a long quotation must not
+                        // push the rest of the list around.
                         if (note.quote.isNotBlank() && note.quote != note.text) {
                             Text(
-                                text = "«" + note.quote.take(160) + "»",
+                                text = "«" + note.quote.trim() + "»",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = palette.secondary,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(top = 2.dp),
                             )
                         }
                     }

@@ -132,6 +132,8 @@ fun NotesSheet(
                                 text = note.text,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = palette.text,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f),
                             )
                             IconButton(onClick = { onDelete(note) }) {
@@ -140,7 +142,8 @@ fun NotesSheet(
                         }
                         if (note.quote.isNotBlank() && note.quote != note.text) {
                             Text(
-                                text = "«" + note.quote.take(160) + "»",
+                                text = "«" + note.quote.trim() + "»",
+                                modifier = Modifier.padding(top = 2.dp),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = palette.secondary,
                                 maxLines = 2,

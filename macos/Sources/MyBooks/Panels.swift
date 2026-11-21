@@ -86,13 +86,15 @@ struct NotesPanel: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(note.text)
                                     .font(.system(size: 12))
-                                    .fixedSize(horizontal: false, vertical: true)
+                                    .lineLimit(3)
+                                    .truncationMode(.tail)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                 if !note.quote.isEmpty && note.quote != note.text {
-                                    Text("«" + String(note.quote.prefix(160)) + "»")
+                                    Text("«" + note.quote + "»")
                                         .font(.system(size: 11))
                                         .foregroundStyle(.secondary)
-                                        .lineLimit(3)
+                                        .lineLimit(2)
+                                        .truncationMode(.tail)
                                 }
                                 HStack(spacing: 10) {
                                     Button("Перейти") { onSelect(note) }
