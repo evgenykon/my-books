@@ -43,8 +43,9 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)
             packageName = "MyBooks"
-            // MSI/EXE packaging requires a major version of 1 or higher.
-            packageVersion = "1.0.0"
+            // MSI/EXE packaging requires a major version of 1 or higher; CI passes a
+            // monotonically growing one, otherwise Windows refuses to upgrade in place.
+            packageVersion = providers.gradleProperty("appVersion").getOrElse("1.0.0")
             // WiX (MSI packaging) only accepts ASCII metadata, so keep these two lines Latin.
             description = "FB2 reader for Windows"
             vendor = "Evgeny Konoplev"
