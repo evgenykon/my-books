@@ -130,6 +130,8 @@ jobs:
 
   publish:
     needs: [android, macos, windows]
+    # A failed platform must not swallow the release: whatever was built is published.
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -149,6 +151,7 @@ jobs:
           generate_release_notes: true
           body: |
             Читалка FB2 для macOS, Windows и Android.
+            В этой версии — шифрованные хранилища в git-ветках (книги, заметки, прогресс и настройки).
 
             **macOS**: распакуйте `my-books-macos.zip`, запустите `MyBooks.app`.
             Приложение подписано ad-hoc, поэтому при первом запуске:
