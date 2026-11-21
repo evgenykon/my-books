@@ -40,6 +40,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -342,7 +343,11 @@ fun NoteEditorPanel(
     // Without this the first focusable child (the "Отмена" button) takes focus and a space
     // press activates it, closing the editor.
     val inputFocus = remember { FocusRequester() }
-    LaunchedEffect(draft) { inputFocus.requestFocus() }
+    LaunchedEffect(draft) {
+        // One frame delay: the field must be attached before FocusRequester can take focus.
+        withFrameNanos { }
+        runCatching { inputFocus.requestFocus() }
+    }
 
     Column(Modifier.width(520.dp).padding(22.dp)) {
         Text("Новая заметка", style = MaterialTheme.typography.titleMedium, color = palette.text)

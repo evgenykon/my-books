@@ -8,6 +8,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -69,6 +70,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
@@ -399,7 +401,9 @@ fun ReaderScreen(
             Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.35f))
-                .clickable { noteDraft = null },
+                // Pointer-only dismissal: a Clickable would also fire on the space key when it
+                // happens to hold focus, closing the editor while typing.
+                .pointerInput(Unit) { detectTapGestures { noteDraft = null } },
             contentAlignment = Alignment.Center,
         ) {
             Surface(shape = RoundedCornerShape(14.dp), color = palette.surface, shadowElevation = 16.dp) {
