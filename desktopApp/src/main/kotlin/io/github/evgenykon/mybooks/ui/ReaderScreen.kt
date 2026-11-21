@@ -7,6 +7,9 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ContextMenuDataProvider
+import androidx.compose.foundation.ContextMenuItem
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
@@ -21,7 +24,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
@@ -32,8 +34,6 @@ import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,10 +49,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -60,7 +58,6 @@ import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -115,7 +112,6 @@ fun ReaderScreen(
     var panel by remember { mutableStateOf<ReaderPanel?>(null) }
     var noteDraft by remember { mutableStateOf<NoteDraft?>(null) }
     var wheel by remember { mutableStateOf(0f) }
-    var pageMenu by remember { mutableStateOf<PageMenu?>(null) }
 
     LaunchedEffect(record.id) {
         state.markOpened(record)
@@ -279,40 +275,12 @@ fun ReaderScreen(
                                             settings = settings,
                                             palette = palette,
                                             density = density,
-                                            onContextMenu = { position ->
-                                                pageMenu = PageMenu(position, line.blockIndex, blockText.ifBlank { line.text })
-                                            },
+                                            blockText = blockText,
+                                            onCopy = { text -> clipboard.setText(AnnotatedString(text)) },
+                                            onNote = { text -> noteDraft = NoteDraft(line.blockIndex, text) },
                                         )
                                     }
                                 }
-                            }
-                        }
-                    }
-
-                    pageMenu?.let { menu ->
-                        Box(
-                            Modifier.offset {
-                                androidx.compose.ui.unit.IntOffset(
-                                    menu.position.x.toInt(),
-                                    menu.position.y.toInt(),
-                                )
-                            },
-                        ) {
-                            DropdownMenu(expanded = true, onDismissRequest = { pageMenu = null }) {
-                                DropdownMenuItem(
-                                    text = { Text("Копировать абзац") },
-                                    onClick = {
-                                        clipboard.setText(AnnotatedString(menu.blockText))
-                                        pageMenu = null
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Добавить заметку") },
-                                    onClick = {
-                                        noteDraft = NoteDraft(menu.blockIndex, menu.blockText)
-                                        pageMenu = null
-                                    },
-                                )
                             }
                         }
                     }
@@ -512,14 +480,16 @@ private fun ReaderFooter(
     }
 }
 
-@OptIn(ExperimentalComposeUiApi::class)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PageLineView(
     line: PageLine,
     settings: ReaderSettings,
     palette: ReaderPalette,
     density: Density,
-    onContextMenu: (Offset) -> Unit,
+    blockText: String,
+    onCopy: (String) -> Unit,
+    onNote: (String) -> Unit,
 ) {
     val m = metricsFor(line.kind, settings, density)
     val style = styleFor(line.kind, settings, palette)
@@ -533,28 +503,31 @@ private fun PageLineView(
         Spacer(Modifier.height(with(density) { m.spaceBeforePx.toDp() }))
     }
 
-    Text(
-        text = line.text,
-        style = style.copy(textAlign = alignment),
-        maxLines = 1,
-        softWrap = false,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = with(density) { m.leadingIndentPx.toDp() })
-            .height(with(density) { m.lineHeightPx.toDp() })
-            // Right click opens the paragraph menu. The event is only observed (not consumed),
-            // so text selection keeps working.
-            .onPointerEvent(PointerEventType.Press) { event ->
-                if (event.button == PointerButton.Secondary) {
-                    onContextMenu(event.changes.first().position)
-                }
-            },
-    )
+    // ContextMenuDataProvider only contributes items to the menu the text already shows on
+    // right click — it does not re-compose the content in a popup, so SelectionContainer
+    // keeps working (a ContextMenuArea here broke selection with "layouts are not part of
+    // the same hierarchy").
+    ContextMenuDataProvider(
+        items = {
+            listOf(
+                ContextMenuItem("Копировать абзац") { onCopy(blockText.ifBlank { line.text }) },
+                ContextMenuItem("Добавить заметку") { onNote(blockText.ifBlank { line.text }) },
+            )
+        },
+    ) {
+        Text(
+            text = line.text,
+            style = style.copy(textAlign = alignment),
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = with(density) { m.leadingIndentPx.toDp() })
+                .height(with(density) { m.lineHeightPx.toDp() }),
+        )
+    }
 
     if (line.isLastOfBlock && m.spaceAfterPx > 0f) {
         Spacer(Modifier.height(with(density) { m.spaceAfterPx.toDp() }))
     }
 }
-
-/** Paragraph menu opened by a right click: where it popped up and what it acts on. */
-private data class PageMenu(val position: Offset, val blockIndex: Int, val blockText: String)

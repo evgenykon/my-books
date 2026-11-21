@@ -59,9 +59,18 @@ jobs:
           cp -R "$ARM" macos/Shared.framework
           lipo -create "$ARM/Shared" "$INTEL/Shared" -output macos/Shared.framework/Shared
       - name: Build app bundle
-        run: chmod +x macos/build.sh && ./macos/build.sh release
+        run: |
+          chmod +x macos/build.sh
+          ./macos/build.sh release 2>&1 | tee macos-build.log
       - name: Zip app
         run: cd macos/dist && ditto -c -k --sequesterRsrc --keepParent MyBooks.app my-books-macos.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-build-log
+          path: macos-build.log
+          if-no-files-found: ignore
+
       - uses: actions/upload-artifact@v4
         with:
           name: macos-app
