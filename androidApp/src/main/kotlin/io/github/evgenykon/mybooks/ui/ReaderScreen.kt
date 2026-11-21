@@ -35,6 +35,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -82,6 +83,9 @@ fun ReaderScreen(
     var showNotes by remember { mutableStateOf(false) }
     var pendingQuote by remember { mutableStateOf<String?>(null) }
     var pendingBlock by remember { mutableStateOf(0) }
+    // Height of the toolbar above the page. The pagination budget must exclude it: without
+    // that the last lines of every page are laid out below the visible area and disappear.
+    var headerHeightPx by remember { mutableStateOf(0) }
 
     LaunchedEffect(record.id) {
         book = repo.loadBook(record)
@@ -90,7 +94,9 @@ fun ReaderScreen(
     Column(Modifier.fillMaxSize().background(palette.background)) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             val pageWidth = with(density) { (maxWidth - (settings.marginH * 2).dp).toPx() }.toInt()
-            val pageHeight = with(density) { (maxHeight - (settings.marginV * 2).dp).toPx() }.toInt()
+            val pageHeight = (
+                with(density) { (maxHeight - (settings.marginV * 2).dp).toPx() } - headerHeightPx
+                ).toInt().coerceAtLeast(1)
             val paragraphSpacing = with(density) { (settings.fontSize * 0.45f).dp.toPx() }
             val emptyLine = with(density) { (settings.fontSize * 0.8f).dp.toPx() }
 
@@ -141,6 +147,7 @@ fun ReaderScreen(
                     currentPage?.let { ReadingProgress.percent(b, Position(it.firstBlockIndex, 0)) }
                 } ?: record.percent
 
+                Box(Modifier.onGloballyPositioned { headerHeightPx = it.size.height }) {
                 ReaderHeader(
                     title = book?.title ?: record.title,
                     author = book?.authorLine ?: record.author,
@@ -153,6 +160,7 @@ fun ReaderScreen(
                     onNotes = { showNotes = true },
                     onSettings = { showSettings = true },
                 )
+                }
 
                 HorizontalPager(
                     state = pagerState,
