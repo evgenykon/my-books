@@ -29,10 +29,10 @@ jobs:
         run: gradle --no-daemon :shared:desktopTest :vaultJvm:test
 
       - name: Build runnable app image
-        run: gradle --no-daemon -PappVersion=1.0.${{ github.run_number }} :desktopApp:createDistributable
+        run: gradle --no-daemon :desktopApp:createDistributable
 
       - name: Package MSI installer
-        run: gradle --no-daemon -PappVersion=1.0.${{ github.run_number }} :desktopApp:packageMsi
+        run: gradle --no-daemon :desktopApp:packageMsi
 
       - name: Zip portable bundle
         shell: pwsh

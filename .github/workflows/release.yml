@@ -107,13 +107,13 @@ jobs:
       - name: Tests
         run: gradle --no-daemon :shared:desktopTest :vaultJvm:test
       - name: Build runnable app image
-        run: gradle --no-daemon -PappVersion=1.0.${{ github.run_number }} :desktopApp:createDistributable
+        run: gradle --no-daemon :desktopApp:createDistributable
       - name: Install WiX Toolset (for MSI)
         continue-on-error: true
         run: choco install wixtoolset -y --no-progress
       - name: Package MSI installer
         continue-on-error: true
-        run: gradle --no-daemon -PappVersion=1.0.${{ github.run_number }} :desktopApp:packageMsi
+        run: gradle --no-daemon :desktopApp:packageMsi
       - name: Zip portable bundle
         shell: pwsh
         run: Compress-Archive -Path desktopApp/build/compose/binaries/main/app/MyBooks/* -DestinationPath my-books-windows.zip -Force
