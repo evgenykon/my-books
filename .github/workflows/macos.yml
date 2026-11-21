@@ -45,6 +45,17 @@ jobs:
           chmod +x macos/build.sh
           ./macos/build.sh release 2>&1 | tee macos-build.log
 
+      - name: Report swift errors
+        if: failure()
+        run: |
+          if [ -f macos-build.log ]; then
+            echo "=== swift errors ==="
+            grep -E "(error|warning): " macos-build.log | head -40 || true
+            grep -E "error: " macos-build.log | head -15 | while IFS= read -r line; do
+              echo "::error title=Swift::$line"
+            done
+          fi
+
       - name: Zip app
         run: |
           cd macos/dist
