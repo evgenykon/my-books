@@ -40,6 +40,15 @@ jobs:
           lipo -create "$ARM/Shared" "$INTEL/Shared" -output macos/Shared.framework/Shared
           lipo -info macos/Shared.framework/Shared
 
+      - name: Inspect framework symbols
+        shell: bash
+        run: |
+          {
+            echo "header lines: $(wc -l < macos/Shared.framework/Headers/Shared.h)"
+            grep -iE "BridgeNative|progressPercent" macos/Shared.framework/Headers/Shared.h | head -8 || true
+          } > framework-symbols.txt
+          cat framework-symbols.txt
+
       - name: Build app bundle
         shell: bash
         run: |
@@ -61,6 +70,12 @@ jobs:
             line="${line//$'\r'/''}"
             [ -n "$line" ] && echo "::error title=swift-build::${line}"
           done
+          if [ -f framework-symbols.txt ]; then
+            while IFS= read -r line; do
+              line="${line//'%'/'%25'}"
+              [ -n "$line" ] && echo "::notice title=framework::${line}"
+            done < framework-symbols.txt
+          fi
 
       - name: Zip app
         run: |
