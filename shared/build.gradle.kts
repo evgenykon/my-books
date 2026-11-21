@@ -47,23 +47,6 @@ kotlin {
                 implementation(kotlin("test"))
             }
         }
-
-        // JVM-only vault code (crypto, GitHub client) shared by Android and the desktop app.
-        val jvmSharedMain by creating { dependsOn(commonMain) }
-        val jvmSharedTest by creating { dependsOn(commonTest) }
-
-        // "androidMain" exists only when the Android plugin is applied; the guarded lookup
-        // keeps the desktop-only builds (and the Windows CI job) working without it.
-        findByName("androidMain")?.dependsOn(jvmSharedMain)
-        val desktopMain by getting { dependsOn(jvmSharedMain) }
-        val desktopTest by getting { dependsOn(jvmSharedTest) }
-
-        // Creating source sets above stops the default hierarchy template from wiring the
-        // Apple targets, and without these lines macosMain is not compiled into
-        // Shared.framework at all (Swift then fails with "cannot find 'BridgeNativeKt'").
-        findByName("macosMain")?.dependsOn(commonMain)
-        findByName("macosArm64Main")?.let { arm -> findByName("macosMain")?.let { arm.dependsOn(it) } }
-        findByName("macosX64Main")?.let { x64 -> findByName("macosMain")?.let { x64.dependsOn(it) } }
     }
 }
 

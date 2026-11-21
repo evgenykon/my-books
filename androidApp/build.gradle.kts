@@ -62,6 +62,7 @@ kotlin {
 
 dependencies {
     implementation(project(":shared"))
+    implementation(project(":vaultJvm"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

@@ -10,6 +10,7 @@ plugins {
 
 dependencies {
     implementation(project(":shared"))
+    implementation(project(":vaultJvm"))
 
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)

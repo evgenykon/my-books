@@ -30,3 +30,4 @@ rootProject.name = "my-books"
 include(":shared")
 include(":androidApp")
 include(":desktopApp")
+include(":vaultJvm")
