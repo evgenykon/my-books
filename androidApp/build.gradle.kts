@@ -63,4 +63,7 @@ dependencies {
 
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
+
+    // Keystore-backed storage for the GitHub token and vault passwords.
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 }

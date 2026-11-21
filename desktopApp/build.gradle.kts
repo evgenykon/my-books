@@ -17,6 +17,9 @@ dependencies {
 
     implementation(libs.kotlinx.coroutines.swing)
     implementation(libs.kotlinx.serialization.json)
+
+    // Windows DPAPI for the vault password and the GitHub token (see secret/WindowsSecrets.kt).
+    implementation("net.java.dev.jna:jna-platform:5.14.0")
 }
 
 kotlin {

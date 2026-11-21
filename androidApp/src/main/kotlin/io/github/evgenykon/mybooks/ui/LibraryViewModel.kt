@@ -4,6 +4,8 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.evgenykon.mybooks.core.BookNote
+import io.github.evgenykon.mybooks.data.AndroidSecrets
+import io.github.evgenykon.mybooks.data.AndroidVaultManager
 import io.github.evgenykon.mybooks.data.BookRecord
 import io.github.evgenykon.mybooks.data.LibraryRepository
 import io.github.evgenykon.mybooks.data.ReaderSettings
@@ -14,7 +16,18 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class LibraryViewModel(private val repo: LibraryRepository) : ViewModel() {
+class LibraryViewModel(
+    private val repo: LibraryRepository,
+    secrets: AndroidSecrets,
+) : ViewModel() {
+
+    /** Encrypted vaults in GitHub branches; every change is pushed to the active one. */
+    val vault = AndroidVaultManager(
+        library = repo,
+        secrets = secrets,
+        scope = viewModelScope,
+        onLibraryChanged = { reloadFromDisk() },
+    )
 
     private val _books = MutableStateFlow(repo.readBooks().sortedByDescending { it.lastOpenedAt })
     val books: StateFlow<List<BookRecord>> = _books.asStateFlow()
@@ -64,6 +77,7 @@ class LibraryViewModel(private val repo: LibraryRepository) : ViewModel() {
                 val updated = _books.value + record
                 persist(updated)
                 _message.value = "Добавлено: ${record.title}"
+                vault.scheduleSync()
             } catch (t: Throwable) {
                 _message.value = "Не удалось открыть файл: ${t.message ?: "неизвестная ошибка"}"
             } finally {
@@ -77,6 +91,7 @@ class LibraryViewModel(private val repo: LibraryRepository) : ViewModel() {
         persist(_books.value.filterNot { it.id == record.id })
         val notes = repo.readNotes().filterNot { it.bookId == record.id }
         repo.writeNotes(notes)
+        vault.scheduleSync()
     }
 
     fun updatePosition(record: BookRecord, blockIndex: Int, charOffset: Int, percent: Int) {
@@ -93,6 +108,7 @@ class LibraryViewModel(private val repo: LibraryRepository) : ViewModel() {
             }
         }
         persist(updated)
+        vault.scheduleSync()
     }
 
     private val _notes = MutableStateFlow(repo.readNotes())
@@ -109,17 +125,28 @@ class LibraryViewModel(private val repo: LibraryRepository) : ViewModel() {
         )
         _notes.value = _notes.value + note
         repo.writeNotes(_notes.value)
+        vault.scheduleSync()
     }
 
     fun deleteNote(note: BookNote) {
         _notes.value = _notes.value.filterNot { it.id == note.id }
         repo.writeNotes(_notes.value)
+        vault.scheduleSync()
     }
 
     fun updateSettings(transform: (ReaderSettings) -> ReaderSettings) {
         val next = transform(_settings.value)
         _settings.value = next
         repo.writeSettings(next)
+        vault.scheduleSync()
+    }
+
+    /** Re-reads the library after a vault was pulled from GitHub. */
+    fun reloadFromDisk() {
+        repo.clearCache()
+        _books.value = repo.readBooks().sortedByDescending { it.lastOpenedAt }
+        _notes.value = repo.readNotes()
+        _settings.value = repo.readSettings()
     }
 
     private fun persist(books: List<BookRecord>) {

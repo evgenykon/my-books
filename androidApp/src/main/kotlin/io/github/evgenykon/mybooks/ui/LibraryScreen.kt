@@ -17,6 +17,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
@@ -57,6 +59,8 @@ fun LibraryScreen(
     viewModel: LibraryViewModel,
     onOpenBook: (BookRecord) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenVaults: () -> Unit = {},
+    activeVault: String? = null,
 ) {
     val books by viewModel.books.collectAsStateWithLifecycle()
     val importing by viewModel.importing.collectAsStateWithLifecycle()
@@ -82,6 +86,16 @@ fun LibraryScreen(
             TopAppBar(
                 title = { Text("Библиотека") },
                 actions = {
+                    if (activeVault != null) {
+                        Icon(
+                            Icons.Filled.CloudDone,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    IconButton(onClick = onOpenVaults) {
+                        Icon(Icons.Filled.CloudQueue, contentDescription = "Хранилища")
+                    }
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Filled.Tune, contentDescription = "Настройки")
                     }

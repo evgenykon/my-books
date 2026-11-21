@@ -48,7 +48,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import io.github.evgenykon.mybooks.core.BookNote
 import io.github.evgenykon.mybooks.core.TocEntry
 import io.github.evgenykon.mybooks.data.ReaderSettings
@@ -324,9 +323,13 @@ private fun SliderRow(
     }
 }
 
-/** Dialog used to write a note for a block (paragraph) of the book. */
+/**
+ * Editor of a note. Rendered inside the window (not as a separate `Dialog`): a dialog opened
+ * from a right-click context menu belongs to another composition, and Compose fails with
+ * "layouts are not part of the same hierarchy".
+ */
 @Composable
-fun NoteEditorDialog(
+fun NoteEditorPanel(
     draft: NoteDraft,
     palette: ReaderPalette,
     onSave: (String) -> Unit,
@@ -334,36 +337,32 @@ fun NoteEditorDialog(
 ) {
     var text by remember(draft) { mutableStateOf("") }
 
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(shape = RoundedCornerShape(14.dp), color = palette.surface) {
-            Column(Modifier.width(520.dp).padding(22.dp)) {
-                Text("Новая заметка", style = MaterialTheme.typography.titleMedium, color = palette.text)
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    text = "«" + draft.quote.take(300) + "»",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.secondary,
-                    maxLines = 6,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    placeholder = { Text("Текст заметки") },
-                    minLines = 3,
-                    maxLines = 8,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(12.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onDismiss) { Text("Отмена") }
-                    Spacer(Modifier.width(6.dp))
-                    TextButton(onClick = { onSave(text.ifBlank { draft.quote.take(200) }) }) {
-                        Text("Сохранить")
-                    }
-                }
+    Column(Modifier.width(520.dp).padding(22.dp)) {
+        Text("Новая заметка", style = MaterialTheme.typography.titleMedium, color = palette.text)
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = "«" + draft.quote.take(300) + "»",
+            style = MaterialTheme.typography.bodySmall,
+            color = palette.secondary,
+            maxLines = 6,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.height(12.dp))
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it },
+            placeholder = { Text("Текст заметки") },
+            minLines = 3,
+            maxLines = 8,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(12.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = onDismiss) { Text("Отмена") }
+            Spacer(Modifier.width(6.dp))
+            TextButton(onClick = { onSave(text.ifBlank { draft.quote.take(200) }) }) {
+                Text("Сохранить")
             }
         }
     }

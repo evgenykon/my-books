@@ -47,6 +47,16 @@ kotlin {
                 implementation(kotlin("test"))
             }
         }
+
+        // JVM-only vault code (crypto, GitHub client) shared by Android and the desktop app.
+        val jvmSharedMain by creating { dependsOn(commonMain) }
+        val jvmSharedTest by creating { dependsOn(commonTest) }
+
+        // "androidMain" exists only when the Android plugin is applied; the guarded lookup
+        // keeps the desktop-only builds (and the Windows CI job) working without it.
+        findByName("androidMain")?.dependsOn(jvmSharedMain)
+        val desktopMain by getting { dependsOn(jvmSharedMain) }
+        val desktopTest by getting { dependsOn(jvmSharedTest) }
     }
 }
 

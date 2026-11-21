@@ -21,6 +21,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
@@ -64,6 +66,8 @@ fun LibraryScreen(
     onOpenBook: (BookRecord) -> Unit,
     onDeleteBook: (BookRecord) -> Unit,
     onImportClick: () -> Unit,
+    onOpenVaults: () -> Unit = {},
+    activeVault: String? = null,
 ) {
     val snackbar = remember { SnackbarHostState() }
     var query by remember { mutableStateOf("") }
@@ -106,6 +110,28 @@ fun LibraryScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                if (activeVault != null) {
+                    Icon(
+                        Icons.Filled.CloudDone,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(end = 6.dp),
+                    )
+                    Text(
+                        text = activeVault,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(end = 10.dp),
+                    )
+                }
+                IconButton(onClick = onOpenVaults) {
+                    Icon(
+                        Icons.Filled.CloudQueue,
+                        contentDescription = "Хранилища",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },

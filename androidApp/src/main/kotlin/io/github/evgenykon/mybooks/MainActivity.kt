@@ -16,7 +16,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.evgenykon.mybooks.ui.LibraryScreen
 import io.github.evgenykon.mybooks.ui.LibraryViewModel
+import io.github.evgenykon.mybooks.data.AndroidSecrets
 import io.github.evgenykon.mybooks.ui.ReaderScreen
+import io.github.evgenykon.mybooks.ui.VaultScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -33,22 +35,62 @@ class MainActivity : ComponentActivity() {
 fun MyBooksApp() {
     val context = LocalContext.current
     val repo = (context.applicationContext as MyBooksApplication).library
-    val viewModel: LibraryViewModel = viewModel { LibraryViewModel(repo) }
+    val viewModel: LibraryViewModel = viewModel { LibraryViewModel(repo, AndroidSecrets(context)) }
 
     val books by viewModel.books.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val notes by viewModel.notes.collectAsStateWithLifecycle()
 
     var openBookId by rememberSaveable { mutableStateOf<String?>(null) }
+    var showVaults by rememberSaveable { mutableStateOf(false) }
     val openBook = books.firstOrNull { it.id == openBookId }
 
-    BackHandler(enabled = openBook != null) { openBookId = null }
+    BackHandler(enabled = openBook != null || showVaults) {
+        if (showVaults) showVaults = false else openBookId = null
+    }
 
-    if (openBook == null) {
+    val vaultState by viewModel.vault.state.collectAsStateWithLifecycle()
+
+    if (showVaults) {
+        VaultScreen(
+            state = vaultState,
+            onBack = { showVaults = false },
+            onSaveSettings = viewModel.vault::saveSettings,
+            onRefresh = viewModel.vault::refreshVaults,
+            onCreate = viewModel.vault::createVault,
+            onOpen = { name, password -> 
+                viewModel.vault.openVault(name, password)
+                viewModel.reloadFromDisk()
+            },
+            onSync = viewModel.vault::syncNow,
+            onCloseVault = viewModel.vault::closeVault,
+            onDelete = viewModel.vault::deleteVault,
+            onConsumeMessage = viewModel.vault::consumeMessage,
+            onOpenTokenPage = {
+                val url = "https://github.com/settings/personal-access-tokens/new" +
+                    "?name=MyBooks&description=My+Books+vault&expires_in=90" +
+                    "&target_name=" + vaultState.owner.ifBlank { "evgenykon" } +
+                    "&permissions%5Bcontents%5D=write"
+                runCatching {
+                    context.startActivity(
+                        android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse(url),
+                        ),
+                    )
+                }
+            },
+        )
+    } else if (openBook == null) {
         LibraryScreen(
             viewModel = viewModel,
             onOpenBook = { openBookId = it.id },
             onOpenSettings = { },
+            onOpenVaults = {
+                showVaults = true
+                viewModel.vault.refreshVaults()
+            },
+            activeVault = vaultState.active,
         )
     } else {
         ReaderScreen(

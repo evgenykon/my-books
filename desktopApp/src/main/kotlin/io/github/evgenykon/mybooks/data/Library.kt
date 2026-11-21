@@ -148,12 +148,35 @@ class LibraryRepository(val dir: File) {
     }
 
     companion object {
-        /** Default storage location: %LOCALAPPDATA%\MyBooks\library. */
+        /**
+         * User data lives in %APPDATA%\MyBooks (Roaming), not in %LOCALAPPDATA%\MyBooks:
+         * the per-user MSI installs the application itself into the latter, and data must
+         * survive uninstall/reinstall.
+         */
         fun default(): LibraryRepository {
-            val base = System.getenv("LOCALAPPDATA")?.takeIf { it.isNotBlank() }
+            val base = System.getenv("APPDATA")?.takeIf { it.isNotBlank() }
                 ?.let { File(it, "MyBooks") }
                 ?: File(System.getProperty("user.home"), ".mybooks")
-            return LibraryRepository(File(base, "library"))
+            val dir = File(base, "library")
+            migrateLegacy(dir)
+            return LibraryRepository(dir)
+        }
+
+        /** Copies the pre-1.0 library from %LOCALAPPDATA%\MyBooks\library, if it exists. */
+        private fun migrateLegacy(target: File) {
+            if (target.exists() && (target.listFiles()?.isNotEmpty() == true)) return
+            val legacyRoot = System.getenv("LOCALAPPDATA")?.takeIf { it.isNotBlank() }
+                ?.let { File(it, "MyBooks/library") } ?: return
+            if (!legacyRoot.isDirectory) return
+            target.mkdirs()
+            legacyRoot.listFiles()?.forEach { file ->
+                runCatching { file.copyTo(File(target, file.name), overwrite = false) }
+            }
+            runCatching {
+                File(legacyRoot.parentFile, "secrets.dat")
+                    .takeIf { it.isFile }
+                    ?.copyTo(File(target.parentFile, "secrets.dat"), overwrite = false)
+            }
         }
 
         /** SHA-256 of the file contents; identifies duplicates. */

@@ -62,7 +62,8 @@ class LibraryRepository(context: Context) {
         encodeDefaults = true
     }
 
-    private val dir = File(context.filesDir, "library").apply { mkdirs() }
+    /** Library directory; the vault manager writes pulled books here. */
+    val dir: File = File(context.filesDir, "library").apply { mkdirs() }
     private val booksFile = File(dir, "books.json")
     private val notesFile = File(dir, "notes.json")
     private val settingsFile = File(dir, "reader-settings.json")
@@ -97,6 +98,10 @@ class LibraryRepository(context: Context) {
     }
 
     fun bookFile(record: BookRecord): File = File(dir, record.fileName)
+
+    fun writeBookFile(fileName: String, bytes: ByteArray) {
+        File(dir, fileName).writeBytes(bytes)
+    }
 
     suspend fun loadBook(record: BookRecord, force: Boolean = false): Book = withContext(Dispatchers.IO) {
         if (!force) cache[record.id]?.let { return@withContext it }
@@ -142,6 +147,10 @@ class LibraryRepository(context: Context) {
             blockCount = book.blocks.size,
             hash = hash,
         )
+    }
+
+    fun clearCache() {
+        cache.clear()
     }
 
     fun deleteBook(record: BookRecord) {

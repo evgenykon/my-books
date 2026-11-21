@@ -25,6 +25,8 @@ import io.github.evgenykon.mybooks.data.LibraryRepository
 import io.github.evgenykon.mybooks.ui.AppState
 import io.github.evgenykon.mybooks.ui.LibraryScreen
 import io.github.evgenykon.mybooks.ui.ReaderScreen
+import io.github.evgenykon.mybooks.ui.VaultScreen
+import io.github.evgenykon.mybooks.util.AppLog
 import java.awt.FileDialog
 import java.awt.Frame
 import java.awt.datatransfer.DataFlavor
@@ -36,6 +38,10 @@ import java.io.File
 
 fun main(args: Array<String>) {
     val repo = LibraryRepository.default()
+    AppLog.init(repo.dir.parentFile ?: repo.dir)
+    AppLog.installCrashHandler()
+    AppLog.info("args=${args.joinToString(" ")}")
+
     val state = AppState(repo)
 
     application {
@@ -44,12 +50,14 @@ fun main(args: Array<String>) {
             position = WindowPosition(Alignment.Center),
         )
         var openBookId by remember { mutableStateOf<String?>(null) }
+        var showVaults by remember { mutableStateOf(false) }
 
         val books by state.books.collectAsState()
         val settings by state.settings.collectAsState()
         val notes by state.notes.collectAsState()
         val importing by state.importing.collectAsState()
         val message by state.message.collectAsState()
+        val vaultState by state.vault.state.collectAsState()
 
         val openBook = books.firstOrNull { it.id == openBookId }
         val windowTitle = openBook?.let { "${it.title} — My Books" } ?: "My Books"
@@ -70,9 +78,25 @@ fun main(args: Array<String>) {
                     )
                     Separator()
                     Item("Библиотека", onClick = { openBookId = null }, shortcut = KeyShortcut(Key.B, ctrl = true))
+                    Item(
+                        "Хранилища…",
+                        onClick = {
+                            showVaults = true
+                            state.vault.refreshVaults()
+                        },
+                        shortcut = KeyShortcut(Key.H, ctrl = true),
+                    )
                     Item("Выход", onClick = ::exitApplication)
                 }
                 Menu("Помощь", mnemonic = 'П') {
+                    Item(
+                        "Открыть папку с логами",
+                        onClick = {
+                            val dir = AppLog.directory ?: return@Item
+                            runCatching { java.awt.Desktop.getDesktop().open(dir) }
+                        },
+                    )
+                    Separator()
                     Item(
                         "О программе",
                         onClick = {
@@ -126,7 +150,21 @@ fun main(args: Array<String>) {
             }
 
             MyBooksTheme {
-                if (openBook == null) {
+                if (showVaults) {
+                    VaultScreen(
+                        state = vaultState,
+                        onBack = { showVaults = false },
+                        onSaveSettings = state.vault::saveSettings,
+                        onRefresh = state.vault::refreshVaults,
+                        onCreate = state.vault::createVault,
+                        onOpen = state.vault::openVault,
+                        onSync = state.vault::syncNow,
+                        onCloseVault = state.vault::closeVault,
+                        onDelete = state.vault::deleteVault,
+                        onConsumeMessage = state.vault::consumeMessage,
+                        onOpenTokenPage = { openUrl(vaultTokenUrl(vaultState.owner)) },
+                    )
+                } else if (openBook == null) {
                     LibraryScreen(
                         books = books,
                         importing = importing,
@@ -139,6 +177,11 @@ fun main(args: Array<String>) {
                                 openBookId = rec?.id
                             }
                         },
+                        onOpenVaults = {
+                            showVaults = true
+                            state.vault.refreshVaults()
+                        },
+                        activeVault = vaultState.active,
                     )
                 } else {
                     ReaderScreen(
@@ -173,6 +216,18 @@ internal fun MyBooksTheme(content: @Composable () -> Unit) {
         ),
         content = content,
     )
+}
+
+/** Pre-filled page for creating a fine-grained token with Contents: write. */
+private fun vaultTokenUrl(owner: String): String {
+    val target = owner.ifBlank { "evgenykon" }
+    return "https://github.com/settings/personal-access-tokens/new" +
+        "?name=MyBooks&description=My+Books+vault&expires_in=90" +
+        "&target_name=" + target + "&permissions%5Bcontents%5D=write"
+}
+
+private fun openUrl(url: String) {
+    runCatching { java.awt.Desktop.getDesktop().browse(java.net.URI(url)) }
 }
 
 /** Native file dialog limited to FB2 files. */

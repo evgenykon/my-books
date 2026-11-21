@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import CryptoKit
 import Shared
 
@@ -13,6 +14,8 @@ struct BookRecord: Codable, Identifiable, Hashable {
     var blockCount: Int = 0
     var addedAt: Double = 0
     var lastOpenedAt: Double = 0
+    /// Character count of the book, shared with other platforms through the vault.
+    var totalChars: Int? = nil
     /// SHA-256 of the source file, used to keep the library free of duplicates.
     var fingerprint: String? = nil
 }
@@ -84,10 +87,15 @@ final class LibraryStore: ObservableObject {
     @Published var settings = ReaderSettings()
     @Published var lastError: String?
 
+    /// Set by `MyBooksApp`: every library change is pushed to the active vault through it.
+    weak var vault: VaultStore?
+
     private let root: URL
     private let booksFile: URL
     private let notesFile: URL
     private let settingsFile: URL
+    /// Set while a vault snapshot is applied, so downloading a vault does not trigger a push back.
+    private var syncSuspended = false
 
     init() {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -146,6 +154,13 @@ final class LibraryStore: ObservableObject {
         }
     }
 
+    /// Tells the vault manager that the library changed; it pushes to the active branch after
+    /// a short debounce.
+    private func changed() {
+        guard !syncSuspended else { return }
+        vault?.scheduleSync()
+    }
+
     // MARK: - Books
 
     func fileURL(for record: BookRecord) -> URL {
@@ -172,6 +187,7 @@ final class LibraryStore: ObservableObject {
                 books[index].lastOpenedAt = Date().timeIntervalSince1970
                 let existing = books[index]
                 saveBooks()
+                changed()
                 DebugLog.log("import: duplicate detected, reusing \(existing.title)")
                 return existing
             }
@@ -192,8 +208,10 @@ final class LibraryStore: ObservableObject {
                 lastOpenedAt: Date().timeIntervalSince1970
             )
             record.fingerprint = hash
+            record.totalChars = book.blocks.reduce(0) { $0 + $1.text.count }
             books.insert(record, at: 0)
             saveBooks()
+            changed()
             return record
         } catch {
             lastError = "Не удалось открыть файл: \(error.localizedDescription)"
@@ -226,6 +244,7 @@ final class LibraryStore: ObservableObject {
         saveBooks()
         saveNotes()
         DebugLog.log("library: removed \(toRemove.count) duplicate(s)")
+        changed()
     }
 
     func loadBook(_ record: BookRecord) -> Book? {
@@ -244,6 +263,7 @@ final class LibraryStore: ObservableObject {
         notes.removeAll { $0.bookId == record.id }
         saveBooks()
         saveNotes()
+        changed()
     }
 
     func updatePosition(_ record: BookRecord, blockIndex: Int, charOffset: Int, percent: Int) {
@@ -253,6 +273,7 @@ final class LibraryStore: ObservableObject {
         books[index].percent = percent
         books[index].lastOpenedAt = Date().timeIntervalSince1970
         saveBooks()
+        changed()
     }
 
     // MARK: - Notes
@@ -272,11 +293,13 @@ final class LibraryStore: ObservableObject {
         )
         notes.append(note)
         saveNotes()
+        changed()
     }
 
     func deleteNote(_ note: ReaderNote) {
         notes.removeAll { $0.id == note.id }
         saveNotes()
+        changed()
     }
 
     // MARK: - Settings
@@ -286,6 +309,179 @@ final class LibraryStore: ObservableObject {
         transform(&copy)
         settings = copy
         saveSettings()
+        changed()
+    }
+
+    // MARK: - Vault bridge
+
+    /// Manifest of the whole library, ready to be encrypted into `vault.enc`.
+    func vaultManifest(named name: String) -> VaultManifest {
+        VaultManifest(
+            version: 1,
+            name: name,
+            updatedAt: Int64(Date().timeIntervalSince1970 * 1000),
+            books: vaultBooks(),
+            notes: vaultNotes(),
+            settings: vaultSettings()
+        )
+    }
+
+    func vaultBooks() -> [VaultBook] {
+        books.map { record in
+            VaultBook(
+                id: record.id,
+                title: record.title,
+                author: record.author,
+                fileName: record.fileName,
+                blockIndex: record.blockIndex,
+                charOffset: record.charOffset,
+                percent: record.percent,
+                totalChars: record.totalChars ?? 0,
+                addedAt: Self.millis(record.addedAt),
+                lastOpenedAt: Self.millis(record.lastOpenedAt),
+                blockCount: record.blockCount,
+                hash: record.fingerprint ?? storedFingerprint(of: record) ?? ""
+            )
+        }
+    }
+
+    func vaultNotes() -> [VaultNote] {
+        notes.map { note in
+            VaultNote(
+                id: note.id,
+                bookId: note.bookId,
+                blockIndex: note.blockIndex,
+                quote: note.quote,
+                text: note.text,
+                createdAt: Self.millis(note.createdAt)
+            )
+        }
+    }
+
+    func vaultSettings() -> VaultSettings {
+        VaultSettings(
+            fontFamily: settings.fontFamily,
+            fontSize: Int(settings.fontSize.rounded()),
+            lineHeight: settings.lineHeight,
+            marginH: Int(settings.marginH.rounded()),
+            marginV: Int(settings.marginV.rounded()),
+            theme: settings.theme,
+            justified: settings.justified
+        )
+    }
+
+    /// Bytes of the FB2 file of a book, used for uploading it to a vault.
+    func bookData(id: String) -> Data? {
+        guard let record = books.first(where: { $0.id == id }) else { return nil }
+        return try? Data(contentsOf: fileURL(for: record))
+    }
+
+    /// True when the book is already here, by id or by the SHA-256 of its file.
+    func hasBook(id: String, hash: String) -> Bool {
+        books.contains { record in
+            record.id == id || (!hash.isEmpty && (record.fingerprint ?? storedFingerprint(of: record)) == hash)
+        }
+    }
+
+    /// Applies a vault snapshot: writes new books to disk, merges reading progress, replaces
+    /// notes and reader settings. Books that exist only locally are kept.
+    func applyVault(
+        books incoming: [VaultBook],
+        notes incomingNotes: [VaultNote],
+        settings incomingSettings: VaultSettings,
+        blobs: [String: Data]
+    ) {
+        syncSuspended = true
+        defer { syncSuspended = false }
+
+        for item in incoming {
+            if let index = indexOf(book: item) {
+                // The vault is the shared copy: adopt its id, so the same file imported on two
+                // devices does not keep bouncing between two ids on every sync.
+                if books[index].id != item.id, !books.contains(where: { $0.id == item.id }) {
+                    books[index].id = item.id
+                }
+                books[index].blockIndex = item.blockIndex
+                books[index].charOffset = item.charOffset
+                books[index].percent = item.percent
+                if item.blockCount > 0 { books[index].blockCount = item.blockCount }
+                if item.totalChars > 0 { books[index].totalChars = item.totalChars }
+                if item.lastOpenedAt > 0 { books[index].lastOpenedAt = Self.seconds(item.lastOpenedAt) }
+                if (books[index].fingerprint ?? "").isEmpty { books[index].fingerprint = item.hash }
+                continue
+            }
+
+            guard let data = blobs[item.id] else { continue }
+            let fileName = item.fileName.isEmpty ? "\(item.id).fb2" : (item.fileName as NSString).lastPathComponent
+            do {
+                try data.write(to: root.appendingPathComponent(fileName), options: .atomic)
+            } catch {
+                lastError = "Не удалось сохранить книгу «\(item.title)»: \(error.localizedDescription)"
+                continue
+            }
+            var record = BookRecord(
+                id: item.id,
+                title: item.title,
+                author: item.author,
+                fileName: fileName,
+                blockIndex: item.blockIndex,
+                charOffset: item.charOffset,
+                percent: item.percent,
+                blockCount: item.blockCount,
+                addedAt: Self.seconds(item.addedAt),
+                lastOpenedAt: Self.seconds(item.lastOpenedAt)
+            )
+            record.totalChars = item.totalChars
+            record.fingerprint = item.hash.isEmpty ? Self.sha256(data) : item.hash
+            books.append(record)
+        }
+
+        books.sort { $0.lastOpenedAt > $1.lastOpenedAt }
+        notes = incomingNotes.map { note in
+            ReaderNote(
+                id: note.id,
+                bookId: note.bookId,
+                blockIndex: note.blockIndex,
+                quote: note.quote,
+                text: note.text,
+                createdAt: Self.seconds(note.createdAt)
+            )
+        }
+        settings = ReaderSettings(
+            fontFamily: incomingSettings.fontFamily,
+            fontSize: Double(incomingSettings.fontSize),
+            lineHeight: incomingSettings.lineHeight,
+            marginH: Double(incomingSettings.marginH),
+            marginV: Double(incomingSettings.marginV),
+            theme: incomingSettings.theme,
+            justified: incomingSettings.justified
+        )
+
+        saveBooks()
+        saveNotes()
+        saveSettings()
+        DebugLog.log("vault: applied \(incoming.count) books, \(incomingNotes.count) notes")
+    }
+
+    private func indexOf(book item: VaultBook) -> Int? {
+        if let index = books.firstIndex(where: { $0.id == item.id }) { return index }
+        if !item.hash.isEmpty,
+           let index = books.firstIndex(where: { ($0.fingerprint ?? storedFingerprint(of: $0)) == item.hash }) {
+            return index
+        }
+        if !item.fileName.isEmpty,
+           let index = books.firstIndex(where: { $0.fileName == (item.fileName as NSString).lastPathComponent }) {
+            return index
+        }
+        return nil
+    }
+
+    private static func millis(_ seconds: Double) -> Int64 {
+        seconds > 0 ? Int64(seconds * 1000) : 0
+    }
+
+    private static func seconds(_ millis: Int64) -> Double {
+        millis > 0 ? Double(millis) / 1000 : 0
     }
 }
 

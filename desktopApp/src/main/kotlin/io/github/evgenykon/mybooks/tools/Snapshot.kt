@@ -27,6 +27,7 @@ import io.github.evgenykon.mybooks.ui.NotesPanel
 import io.github.evgenykon.mybooks.ui.ReaderPalette
 import io.github.evgenykon.mybooks.ui.SettingsPanel
 import io.github.evgenykon.mybooks.ui.TocPanel
+import io.github.evgenykon.mybooks.ui.VaultScreen
 import io.github.evgenykon.mybooks.ui.paletteOf
 import io.github.evgenykon.mybooks.ui.styleFor
 import org.jetbrains.skia.EncodedImageFormat
@@ -65,6 +66,32 @@ fun main() {
             onOpenBook = {},
             onDeleteBook = {},
             onImportClick = {},
+        )
+    }
+
+    render(out, "vaults", 1160, 900) {
+        VaultScreen(
+            state = io.github.evgenykon.mybooks.data.VaultState(
+                configured = true,
+                owner = "evgenykon",
+                repo = "my-books",
+                tokenSaved = true,
+                active = "home-2026",
+                vaults = listOf(
+                    io.github.evgenykon.mybooks.vault.VaultInfo("home-2026", books = 7, notes = 23, updatedAt = 1762500000000L, passwordSaved = true),
+                    io.github.evgenykon.mybooks.vault.VaultInfo("work", books = 2, notes = 4, updatedAt = 1762400000000L, passwordSaved = false),
+                    io.github.evgenykon.mybooks.vault.VaultInfo("phone", passwordSaved = false),
+                ),
+            ),
+            onBack = {},
+            onSaveSettings = { _, _, _ -> },
+            onRefresh = {},
+            onCreate = { _, _, _ -> },
+            onOpen = { _, _ -> },
+            onSync = {},
+            onCloseVault = {},
+            onDelete = {},
+            onConsumeMessage = {},
         )
     }
 

@@ -6,6 +6,9 @@ import io.github.evgenykon.mybooks.core.ReadingProgress
 import io.github.evgenykon.mybooks.data.BookRecord
 import io.github.evgenykon.mybooks.data.LibraryRepository
 import io.github.evgenykon.mybooks.data.ReaderSettings
+import io.github.evgenykon.mybooks.data.VaultManager
+import io.github.evgenykon.mybooks.secret.WindowsSecrets
+import io.github.evgenykon.mybooks.util.AppLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,6 +27,14 @@ import java.util.UUID
 class AppState(val repo: LibraryRepository) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    /** Encrypted vaults in GitHub branches; every library change is pushed to the active one. */
+    val vault = VaultManager(
+        library = repo,
+        secrets = WindowsSecrets(File(repo.dir.parentFile ?: repo.dir, "secrets.dat")),
+        scope = scope,
+        onLibraryChanged = { reloadFromDisk() },
+    )
 
     private val _books = MutableStateFlow(dedupe(repo.readBooks()))
     val books: StateFlow<List<BookRecord>> = _books.asStateFlow()
@@ -59,6 +70,7 @@ class AppState(val repo: LibraryRepository) {
                     runCatching { addFile(file) }
                         .onSuccess { record -> last = record ?: last }
                         .onFailure { error ->
+                            AppLog.error("import of '${file.name}' failed", error)
                             _message.value =
                                 "Не удалось открыть «${file.name}»: ${error.message ?: "неизвестная ошибка"}"
                         }
@@ -81,6 +93,7 @@ class AppState(val repo: LibraryRepository) {
         val record = repo.importBook(file.name, bytes, hash)
         persist(_books.value + record)
         _message.value = "Добавлено: ${record.title}"
+        vault.scheduleSync()
         return record
     }
 
@@ -90,6 +103,7 @@ class AppState(val repo: LibraryRepository) {
         val remaining = repo.readNotes().filterNot { it.bookId == record.id }
         _notes.value = remaining
         repo.writeNotes(remaining)
+        vault.scheduleSync()
     }
 
     fun markOpened(record: BookRecord) {
@@ -113,6 +127,7 @@ class AppState(val repo: LibraryRepository) {
             }
         }
         persist(updated)
+        vault.scheduleSync()
     }
 
     fun progressPercent(record: BookRecord, blockIndex: Int): Int {
@@ -131,11 +146,13 @@ class AppState(val repo: LibraryRepository) {
         )
         _notes.value = _notes.value + note
         repo.writeNotes(_notes.value)
+        vault.scheduleSync()
     }
 
     fun deleteNote(note: BookNote) {
         _notes.value = _notes.value.filterNot { it.id == note.id }
         repo.writeNotes(_notes.value)
+        vault.scheduleSync()
     }
 
     fun updateSettings(transform: (ReaderSettings) -> ReaderSettings) = setSettings(transform(_settings.value))
@@ -143,6 +160,14 @@ class AppState(val repo: LibraryRepository) {
     fun setSettings(settings: ReaderSettings) {
         _settings.value = settings
         repo.writeSettings(settings)
+        vault.scheduleSync()
+    }
+
+    /** Re-reads the local library after a vault was pulled from GitHub. */
+    fun reloadFromDisk() {
+        _books.value = dedupe(repo.readBooks())
+        _notes.value = repo.readNotes()
+        _settings.value = repo.readSettings()
     }
 
     private fun persist(books: List<BookRecord>) {

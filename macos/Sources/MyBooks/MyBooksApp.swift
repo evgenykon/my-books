@@ -4,12 +4,21 @@ import AppKit
 @main
 struct MyBooksApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @StateObject private var store = LibraryStore()
+    @StateObject private var store: LibraryStore
+    @StateObject private var vault: VaultStore
     @State private var openRecord: BookRecord?
+
+    init() {
+        let library = LibraryStore()
+        let vaultStore = VaultStore(library: library)
+        library.vault = vaultStore
+        _store = StateObject(wrappedValue: library)
+        _vault = StateObject(wrappedValue: vaultStore)
+    }
 
     var body: some Scene {
         WindowGroup("My Books") {
-            RootView(store: store, openRecord: $openRecord)
+            RootView(store: store, vault: vault, openRecord: $openRecord)
                 .frame(minWidth: 900, minHeight: 620)
         }
         .defaultSize(width: 1040, height: 720)
@@ -102,6 +111,7 @@ extension Notification.Name {
 
 struct RootView: View {
     @ObservedObject var store: LibraryStore
+    @ObservedObject var vault: VaultStore
     @Binding var openRecord: BookRecord?
 
     var body: some View {
@@ -112,7 +122,7 @@ struct RootView: View {
                 }
                 .transition(.opacity)
             } else {
-                LibraryView(store: store) { record in
+                LibraryView(store: store, vault: vault) { record in
                     openRecord = record
                 }
                 .transition(.opacity)

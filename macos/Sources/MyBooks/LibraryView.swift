@@ -4,10 +4,12 @@ import AppKit
 
 struct LibraryView: View {
     @ObservedObject var store: LibraryStore
+    @ObservedObject var vault: VaultStore
     var onOpen: (BookRecord) -> Void
 
     @State private var importing = false
     @State private var pendingDelete: BookRecord?
+    @State private var showingVaults = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -71,6 +73,9 @@ struct LibraryView: View {
         } message: {
             Text("Книга и все заметки к ней будут удалены.")
         }
+        .sheet(isPresented: $showingVaults) {
+            VaultView(vault: vault) { showingVaults = false }
+        }
     }
 
     private var header: some View {
@@ -80,6 +85,19 @@ struct LibraryView: View {
                 Text(bookCountLabel).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
+            if let active = vault.active {
+                HStack(spacing: 5) {
+                    Image(systemName: "lock.fill").font(.system(size: 9))
+                    Text(active).font(.system(size: 11))
+                }
+                .foregroundStyle(.secondary)
+                .help("Активное хранилище: \(active)")
+            }
+            Button {
+                showingVaults = true
+            } label: {
+                Label("Хранилища", systemImage: "icloud")
+            }
             Button {
                 importing = true
             } label: {
