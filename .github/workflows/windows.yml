@@ -34,6 +34,27 @@ jobs:
       - name: Package MSI installer
         run: gradle --no-daemon :desktopApp:packageMsi
 
+
+      # Self-signed code-signing certificate: properties show the publisher, and browsers
+      # treat the file a bit more kindly (reputation still has to be earned).
+      - name: Sign Windows binaries
+        shell: pwsh
+        run: |
+          $pfx = "desktopApp/signing/mybooks.pfx"
+          $sec = ConvertTo-SecureString "mybooks-sign" -Force -AsPlainText
+          $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($pfx, $sec)
+          $targets = @()
+          $exe = "desktopApp/build/compose/binaries/main/app/MyBooks/MyBooks.exe"
+          if (Test-Path $exe) { $targets += (Resolve-Path $exe).Path }
+          $targets += Get-ChildItem "desktopApp/build/compose/binaries/main/msi/*.msi" -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+          if (-not $targets) { Write-Host "nothing to sign"; exit 0 }
+          foreach ($t in $targets) {
+            $result = Set-AuthenticodeSignature -FilePath $t -Certificate $cert `
+              -TimestampServer "http://timestamp.digicert.com" -HashAlgorithm SHA256
+            Write-Host ("signed {0} -> {1}" -f $t, $result.Status)
+            if ($result.Status -ne 'Valid') { Write-Host ($result.StatusMessage) }
+          }
+
       - name: Zip portable bundle
         shell: pwsh
         run: Compress-Archive -Path desktopApp/build/compose/binaries/main/app/MyBooks/* -DestinationPath my-books-windows.zip -Force
