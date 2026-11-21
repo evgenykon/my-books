@@ -64,6 +64,10 @@ fun MyBooksApp() {
             palette = paletteOf(settings),
             onChange = viewModel::setSettings,
             onDismiss = { showSettings = false },
+            onCheckUpdates = {
+                viewModel.checkForUpdates()
+                showSettings = false
+            },
         )
     }
 

@@ -162,6 +162,7 @@ fun SettingsSheet(
     palette: ReaderPalette,
     onChange: (ReaderSettings) -> Unit,
     onDismiss: () -> Unit,
+    onCheckUpdates: (() -> Unit)? = null,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -244,6 +245,13 @@ fun SettingsSheet(
                     checked = settings.justified,
                     onCheckedChange = { onChange(settings.copy(justified = it)) },
                 )
+            }
+
+            if (onCheckUpdates != null) {
+                HorizontalDivider(color = palette.secondary.copy(alpha = 0.2f))
+                TextButton(onClick = onCheckUpdates, modifier = Modifier.fillMaxWidth()) {
+                    Text("Проверить обновления")
+                }
             }
 
             Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.End) {
