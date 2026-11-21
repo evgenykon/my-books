@@ -67,8 +67,43 @@ jobs:
           name: macos-app
           path: macos/dist/my-books-macos.zip
 
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+      - name: Tests
+        run: gradle --no-daemon :shared:desktopTest
+      - name: Build runnable app image
+        run: gradle --no-daemon :desktopApp:createDistributable
+      - name: Install WiX Toolset (for MSI)
+        continue-on-error: true
+        run: choco install wixtoolset -y --no-progress
+      - name: Package MSI installer
+        continue-on-error: true
+        run: gradle --no-daemon :desktopApp:packageMsi
+      - name: Zip portable bundle
+        shell: pwsh
+        run: Compress-Archive -Path desktopApp/build/compose/binaries/main/app/MyBooks/* -DestinationPath my-books-windows.zip -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-app
+          path: my-books-windows.zip
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-msi
+          path: desktopApp/build/compose/binaries/main/msi/*.msi
+          if-no-files-found: warn
+
   publish:
-    needs: [android, macos]
+    needs: [android, macos, windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -87,12 +122,16 @@ jobs:
           draft: false
           generate_release_notes: true
           body: |
-            Читалка FB2 для macOS и Android.
+            Читалка FB2 для macOS, Windows и Android.
 
             **macOS**: распакуйте `my-books-macos.zip`, запустите `MyBooks.app`.
             Приложение подписано ad-hoc, поэтому при первом запуске:
             правый клик по `MyBooks.app` → «Открыть», либо
             `xattr -dr com.apple.quarantine MyBooks.app`.
+
+            **Windows**: `my-books-windows.zip` — распакуйте в любую папку и запустите `MyBooks.exe`
+            (JRE внутри, ничего устанавливать не нужно). Либо `MyBooks-1.0.0.msi` —
+            установщик с ярлыком в меню «Пуск» и ассоциацией `.fb2`.
 
             **Android**: `my-books-android.apk` (debug-сборка, устанавливается через «Неизвестные источники»).
           files: assets/*

@@ -18,6 +18,14 @@ kotlin {
         }
     }
 
+    // Desktop (Windows / Linux / macOS) client runs on the JVM and reuses
+    // exactly the same parser and document model as the Android app.
+    jvm("desktop") {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
+    }
+
     macosArm64()
     macosX64()
 

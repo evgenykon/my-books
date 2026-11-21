@@ -1,6 +1,6 @@
 # My Books
 
-Читалка FB2 для **Android** и **macOS**: библиотека книг, запоминание места чтения,
+Читалка FB2 для **Windows**, **Android** и **macOS**: библиотека книг, запоминание места чтения,
 управление шрифтами, заметки к строке, выделение текста (копирование, «в заметку»),
 пагинация с заголовком (книга, автор, страница, процент) и листание страниц.
 
@@ -9,10 +9,11 @@
 ```
 shared/      Kotlin Multiplatform ядро: парсер FB2, модель книги, прогресс чтения
 androidApp/  Android-приложение: Kotlin + Jetpack Compose
+desktopApp/  Windows-приложение: Compose Multiplatform (JVM), ядро как jvm-таргет
 macos/       macOS-приложение: SwiftUI + CoreText (SwiftPM, ядро как Shared.xcframework)
 ```
 
-Обе платформы используют **один** парсер FB2 и одну модель документа: книга разбивается
+Все три платформы используют **один** парсер FB2 и одну модель документа: книга разбивается
 на плоский список блоков (`Block`), позиция чтения — это `(индекс блока, смещение в
 символах)`, процент прочитанного считается в ядре (`ReadingProgress`).
 
@@ -50,15 +51,35 @@ macos/       macOS-приложение: SwiftUI + CoreText (SwiftPM, ядро �
 - Выделение: `textSelection(.enabled)` + ⌘C; контекстное меню абзаца — «Копировать абзац»,
   «Добавить заметку».
 
+### Windows
+
+- Библиотека: импорт `.fb2` перетаскиванием в окно, через диалог `Ctrl+O` и из командной
+  строки (`MyBooks.exe book.fb2`), поиск по названию и автору, удаление книги вместе с заметками.
+- Читалка: та же пагинация по реальному layout текста (`TextMeasurer`), колонка ограничена
+  по ширине для читаемости на широком экране.
+- Навигация: `←` `→`, `PgUp`/`PgDn`, пробел, `Home`/`End`, колесо мыши; `Ctrl` + `+/-` — размер шрифта.
+- Заголовок: книга, автор, страница/всего, процент, панели содержания, заметок, настроек
+  (боковые панели, а не нижние шторки).
+- Выделение: `SelectionContainer` + `Ctrl+C`; правый клик по абзацу — «Копировать абзац»,
+  «Добавить заметку».
+- Данные: `%LOCALAPPDATA%\MyBooks\library` (`books.json`, `notes.json`, `reader-settings.json`
+  и по одному `.fb2` на книгу).
+
 ## Сборка
 
-Локальные сборки Gradle не выполняются — обе платформы собираются в GitHub Actions.
+Локальные сборки Gradle не выполняются — все платформы собираются в GitHub Actions.
 
 - **Android**: workflow `Android` — `:shared:testDebugUnitTest` + `:androidApp:assembleDebug`,
   APK в артефакте `mybooks-debug-apk`.
 - **macOS**: workflow `macOS` — линковка Kotlin/Native фреймворков (arm64 + x64),
   сборка `Shared.xcframework`, `swift build`, упаковка `MyBooks.app` в артефакт
   `mybooks-macos-app` (плюс `shared-xcframework`).
+- **Windows**: workflow `Windows` — `:shared:desktopTest` + `:desktopApp:createDistributable`,
+  портативный архив `MyBooks/` с встроенной JRE в артефакте `mybooks-windows-zip`;
+  `:desktopApp:packageMsi` дополнительно собирает установщик (`mybooks-windows-msi`).
+
+Скриншоты интерфейса Windows-клиента без запуска окна: `gradle :desktopApp:snapshot`
+(пишет PNG в `desktopApp/build/snapshots`).
 
 Локальный запуск macOS-приложения (нужен скачанный `Shared.xcframework` в `macos/`):
 
