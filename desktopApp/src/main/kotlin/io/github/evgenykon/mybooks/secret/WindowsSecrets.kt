@@ -18,6 +18,8 @@ data class VaultSecrets(
     val repo: String = "my-books",
     /** Vault name (branch) -> password. */
     val passwords: Map<String, String> = emptyMap(),
+    /** Vault that was open last time; checked and synced on the next start. */
+    val activeVault: String = "",
 )
 
 class WindowsSecrets(private val file: File) {
@@ -46,6 +48,10 @@ class WindowsSecrets(private val file: File) {
 
     fun savePassword(vault: String, password: String) {
         write(read().copy(passwords = read().passwords + (vault to password)))
+    }
+
+    fun saveActiveVault(vault: String) {
+        write(read().copy(activeVault = clean(vault)))
     }
 
     fun forgetPassword(vault: String) {

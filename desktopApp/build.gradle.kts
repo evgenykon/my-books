@@ -21,6 +21,8 @@ dependencies {
 
     // Windows DPAPI for the vault password and the GitHub token (see secret/WindowsSecrets.kt).
     implementation("net.java.dev.jna:jna-platform:5.14.0")
+
+    testImplementation(kotlin("test"))
 }
 
 kotlin {
@@ -78,4 +80,9 @@ tasks.register<JavaExec>("snapshot") {
 
 tasks.named("build") {
     dependsOn("createDistributable")
+}
+
+
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
 }

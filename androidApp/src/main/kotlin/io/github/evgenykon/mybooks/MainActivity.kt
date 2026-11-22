@@ -111,6 +111,8 @@ fun MyBooksApp() {
                 viewModel.vault.refreshVaults()
             },
             activeVault = vaultState.active,
+            vaultBusy = vaultState.busy,
+            vaultBusyText = vaultState.busyText,
         )
     } else {
         ReaderScreen(

@@ -51,12 +51,25 @@ class AndroidVaultManager(
             owner = secrets.owner,
             repo = secrets.repo,
             tokenSaved = secrets.token.isNotEmpty(),
+            // Falls back to the only saved vault, so older installs get checked right away.
+            active = secrets.activeVault.ifBlank { secrets.vaultNames().singleOrNull().orEmpty() }
+                .takeIf { it.isNotBlank() && secrets.password(it) != null },
         ),
     )
     val state: StateFlow<VaultUiState> = _state.asStateFlow()
 
     private var password: CharArray? = null
     private var syncJob: Job? = null
+
+    init {
+        val name = secrets.activeVault.ifBlank { secrets.vaultNames().singleOrNull().orEmpty() }
+        if (name.isNotBlank() && secrets.isConfigured()) {
+            secrets.password(name)?.let { pw ->
+                password = pw.toCharArray()
+                scope.launch { startupSync(name, pw) }
+            }
+        }
+    }
 
     private fun repository(): VaultRepository =
         VaultRepository(GitHubVaultClient(secrets.token, secrets.owner, secrets.repo))
@@ -131,20 +144,72 @@ class AndroidVaultManager(
             val repo = repository()
             val manifest = withContext(Dispatchers.IO) { repo.openVault(name, pw.toCharArray()) }.manifest
 
-            val local = library.readBooks().associateBy { it.id }.toMutableMap()
-            for (book in manifest.books) {
-                val existing = local[book.id]
-                if (existing != null) {
-                    local[book.id] = existing.copy(
-                        blockIndex = book.blockIndex,
-                        charOffset = book.charOffset,
-                        percent = book.percent,
-                        lastOpenedAt = book.lastOpenedAt,
+            withContext(Dispatchers.IO) { mergeFromVault(name, pw, manifest) }
+
+            secrets.savePassword(name, pw)
+            secrets.activeVault = name
+            this@AndroidVaultManager.password = pw.toCharArray()
+            onLibraryChanged()
+            _state.update {
+                it.copy(
+                    active = name,
+                    message = "Хранилище «$name» открыто: ${manifest.books.size} книг, ${manifest.notes.size} заметок",
+                    vaults = it.vaults.map { v -> if (v.name == name) v.copy(passwordSaved = true) else v },
+                )
+            }
+        }
+    }
+
+
+    /**
+     * Startup: verify the vault binding and make both sides agree.
+     *
+     * The app used to only push local changes, so a phone and a desktop drifted apart — reading
+     * progress made on one never reached the other. Now the vault is pulled, merged (the newer
+     * reading position wins per book, notes are united by id, settings follow the newest writer)
+     * and then pushed.
+     */
+    private suspend fun startupSync(name: String, pw: String) {
+        val repo = repository()
+        _state.update { it.copy(busy = true, busyText = "Проверяю хранилище «$name»…") }
+        try {
+            if (!withContext(Dispatchers.IO) { repo.vaultExists(name) }) {
+                secrets.activeVault = ""
+                password?.fill(' ')
+                password = null
+                _state.update {
+                    it.copy(
+                        busy = false,
+                        busyText = null,
+                        active = null,
+                        error = "Ветка «$name» не найдена — хранилище отвязано",
                     )
-                    continue
                 }
-                val bytes = withContext(Dispatchers.IO) { repo.readBook(name, pw.toCharArray(), book) } ?: continue
-                withContext(Dispatchers.IO) { library.writeBookFile(book.fileName, bytes) }
+                return
+            }
+
+            val manifest = withContext(Dispatchers.IO) { repo.openVault(name, pw.toCharArray()) }.manifest
+            withContext(Dispatchers.IO) { mergeFromVault(name, pw, manifest) }
+            onLibraryChanged()
+
+            _state.update { it.copy(busyText = "Отправляю изменения…") }
+            push()
+        } catch (e: Throwable) {
+            _state.update {
+                it.copy(busy = false, busyText = null, error = "Хранилище «$name»: ${e.message}")
+            }
+        }
+    }
+
+    /** Merges the vault into the local library: nothing local is lost, newer wins. */
+    private fun mergeFromVault(name: String, pw: String, manifest: VaultManifest) {
+        val repo = repository()
+        val local = library.readBooks().associateBy { it.id }.toMutableMap()
+        for (book in manifest.books) {
+            val existing = local[book.id]
+            if (existing == null) {
+                val bytes = repo.readBook(name, pw.toCharArray(), book) ?: continue
+                library.writeBookFile(book.fileName, bytes)
                 local[book.id] = BookRecord(
                     id = book.id,
                     title = book.title,
@@ -159,31 +224,28 @@ class AndroidVaultManager(
                     blockCount = book.blockCount,
                     hash = book.hash,
                 )
-            }
-
-            withContext(Dispatchers.IO) {
-                library.writeBooks(local.values.toList())
-                library.writeNotes(manifest.notes.map { it.toNote() })
-                library.writeSettings(manifest.settings.toReaderSettings())
-                library.clearCache()
-            }
-
-            secrets.savePassword(name, pw)
-            this@AndroidVaultManager.password = pw.toCharArray()
-            onLibraryChanged()
-            _state.update {
-                it.copy(
-                    active = name,
-                    message = "Хранилище «$name» открыто: ${manifest.books.size} книг, ${manifest.notes.size} заметок",
-                    vaults = it.vaults.map { v -> if (v.name == name) v.copy(passwordSaved = true) else v },
+            } else if (book.lastOpenedAt > existing.lastOpenedAt) {
+                local[book.id] = existing.copy(
+                    blockIndex = book.blockIndex,
+                    charOffset = book.charOffset,
+                    percent = book.percent,
+                    lastOpenedAt = book.lastOpenedAt,
                 )
             }
         }
+        library.writeBooks(local.values.toList())
+
+        val localNotes = library.readNotes().associateBy { it.id }
+        val merged = localNotes + manifest.notes.map { it.toNote() }.associateBy { it.id }
+        library.writeNotes(merged.values.toList())
+        library.writeSettings(manifest.settings.toReaderSettings())
+        library.clearCache()
     }
 
     fun closeVault() {
         password?.fill(' ')
         password = null
+        secrets.activeVault = ""
         _state.update { it.copy(active = null, message = "Хранилище закрыто") }
     }
 
@@ -207,8 +269,11 @@ class AndroidVaultManager(
         }
     }
 
+    /** Two-way sync: pull what other devices wrote, merge, then push local changes. */
     fun syncNow() {
-        scope.launch { push() }
+        val name = _state.value.active ?: return
+        val pw = secrets.password(name) ?: return
+        scope.launch { startupSync(name, pw) }
     }
 
     private suspend fun push() {

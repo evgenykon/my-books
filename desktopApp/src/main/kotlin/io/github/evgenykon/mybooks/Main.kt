@@ -22,6 +22,7 @@ import androidx.compose.ui.window.rememberWindowState
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyShortcut
 import io.github.evgenykon.mybooks.data.LibraryRepository
+import io.github.evgenykon.mybooks.platform.FileAssociation
 import io.github.evgenykon.mybooks.ui.AppState
 import io.github.evgenykon.mybooks.ui.LibraryScreen
 import io.github.evgenykon.mybooks.ui.ReaderScreen
@@ -41,6 +42,10 @@ fun main(args: Array<String>) {
     AppLog.init(repo.dir.parentFile ?: repo.dir)
     AppLog.installCrashHandler()
     AppLog.info("args=${args.joinToString(" ")}")
+    // .fb2 in Windows Explorer -> My Books. Per-user (HKCU), no administrator rights.
+    if (FileAssociation.supported) {
+        AppLog.info("fb2 association registered=${FileAssociation.ensureRegistered()}")
+    }
 
     val state = AppState(repo)
 
@@ -86,6 +91,24 @@ fun main(args: Array<String>) {
                         },
                         shortcut = KeyShortcut(Key.H, ctrl = true),
                     )
+                    Separator()
+                    Item(
+                        "Связать файлы .fb2",
+                        onClick = {
+                            val ok = FileAssociation.register()
+                            state.showMessage(
+                                if (ok) "Файлы .fb2 открываются в My Books" else "Не удалось связать .fb2",
+                            )
+                        },
+                    )
+                    Item(
+                        "Убрать связь с .fb2",
+                        onClick = {
+                            FileAssociation.unregister()
+                            state.showMessage("Связь с .fb2 удалена")
+                        },
+                    )
+                    Separator()
                     Item("Выход", onClick = ::exitApplication)
                 }
                 Menu("Помощь", mnemonic = 'П') {
@@ -113,8 +136,12 @@ fun main(args: Array<String>) {
             LaunchedEffect(Unit) {
                 val path = args.firstOrNull() ?: return@LaunchedEffect
                 val file = File(path)
+                AppLog.info("opening from command line: ${file.absolutePath} isFile=${file.isFile}")
                 if (file.isFile) {
-                    state.importFiles(listOf(file)) { rec -> openBookId = rec?.id }
+                    state.importFiles(listOf(file)) { rec ->
+                        AppLog.info("command line import done, record=${rec?.title}")
+                        openBookId = rec?.id
+                    }
                 }
             }
 
@@ -182,6 +209,8 @@ fun main(args: Array<String>) {
                             state.vault.refreshVaults()
                         },
                         activeVault = vaultState.active,
+                        vaultBusy = vaultState.busy,
+                        vaultBusyText = vaultState.busyText,
                     )
                 } else {
                     ReaderScreen(

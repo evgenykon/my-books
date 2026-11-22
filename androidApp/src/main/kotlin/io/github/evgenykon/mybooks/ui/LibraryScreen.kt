@@ -30,6 +30,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -64,6 +65,9 @@ fun LibraryScreen(
     onOpenSettings: () -> Unit,
     onOpenVaults: () -> Unit = {},
     activeVault: String? = null,
+    /** Vault work (create / open / sync / delete) runs in the background: show it here. */
+    vaultBusy: Boolean = false,
+    vaultBusyText: String? = null,
 ) {
     val books by viewModel.books.collectAsStateWithLifecycle()
     val importing by viewModel.importing.collectAsStateWithLifecycle()
@@ -119,6 +123,9 @@ fun LibraryScreen(
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
+            if (vaultBusy) {
+                VaultBusyBar(vaultBusyText)
+            }
             update?.let { available ->
                 UpdateBanner(
                     update = available,
@@ -284,6 +291,30 @@ private fun UpdateBanner(
                     modifier = Modifier.fillMaxWidth().height(3.dp),
                 )
             }
+        }
+    }
+}
+
+/** Thin progress line under the toolbar while the vault is being read or written. */
+@Composable
+private fun VaultBusyBar(text: String?) {
+    Column(Modifier.fillMaxWidth()) {
+        LinearProgressIndicator(
+            modifier = Modifier.fillMaxWidth().height(2.dp),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+        )
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CircularProgressIndicator(Modifier.width(12.dp).height(12.dp), strokeWidth = 1.5.dp)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = text ?: "Работаю с хранилищем…",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

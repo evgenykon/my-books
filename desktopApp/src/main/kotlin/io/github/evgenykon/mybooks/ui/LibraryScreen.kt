@@ -68,6 +68,9 @@ fun LibraryScreen(
     onImportClick: () -> Unit,
     onOpenVaults: () -> Unit = {},
     activeVault: String? = null,
+    /** Vault work (create / open / sync / delete) runs in the background: show it here too. */
+    vaultBusy: Boolean = false,
+    vaultBusyText: String? = null,
 ) {
     val snackbar = remember { SnackbarHostState() }
     var query by remember { mutableStateOf("") }
@@ -151,6 +154,10 @@ fun LibraryScreen(
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+            if (vaultBusy) {
+                VaultBusyBar(vaultBusyText)
+            }
 
             Box(Modifier.fillMaxSize()) {
                 when {
@@ -288,6 +295,30 @@ private fun BookRow(book: BookRecord, onClick: () -> Unit, onDelete: () -> Unit)
                 Icons.Filled.Delete,
                 contentDescription = "Удалить",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/** Thin progress bar under the toolbar while the vault is being read or written. */
+@Composable
+private fun VaultBusyBar(text: String?) {
+    Column(Modifier.fillMaxWidth()) {
+        LinearProgressIndicator(
+            modifier = Modifier.fillMaxWidth().height(2.dp),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+        )
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CircularProgressIndicator(Modifier.width(12.dp).height(12.dp), strokeWidth = 1.5.dp)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = text ?: "Работаю с хранилищем…",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

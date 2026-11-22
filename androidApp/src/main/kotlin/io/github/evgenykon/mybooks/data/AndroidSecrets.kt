@@ -44,7 +44,14 @@ class AndroidSecrets(context: Context) {
         get() = clean(prefs.getString(KEY_REPO, "my-books").orEmpty())
         set(value) = prefs.edit().putString(KEY_REPO, clean(value)).apply()
 
+    /** Vault that was open last time: verified and synced on the next start. */
+    var activeVault: String
+        get() = clean(prefs.getString(KEY_ACTIVE_VAULT, "").orEmpty())
+        set(value) = prefs.edit().putString(KEY_ACTIVE_VAULT, clean(value)).apply()
+
     fun isConfigured(): Boolean = token.isNotEmpty() && owner.isNotEmpty() && repo.isNotEmpty()
+
+    fun vaultNames(): List<String> = passwords().keys.toList()
 
     fun password(vault: String): String? = passwords()[vault]
 
@@ -69,5 +76,6 @@ class AndroidSecrets(context: Context) {
         const val KEY_OWNER = "owner"
         const val KEY_REPO = "repo"
         const val KEY_PASSWORDS = "vault_passwords"
+        const val KEY_ACTIVE_VAULT = "active_vault"
     }
 }
