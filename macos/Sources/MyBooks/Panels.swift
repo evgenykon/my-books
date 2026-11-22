@@ -125,7 +125,7 @@ struct SettingsPanel: View {
     @State var settings: ReaderSettings
     var onChange: (ReaderSettings) -> Void
 
-    private let families = Paginator.familyNames
+    private let families = Paginator.familyLabels
     private let themes = ["Светлая", "Сепия", "Тёмная"]
 
     var body: some View {

@@ -49,6 +49,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -125,6 +130,11 @@ fun ReaderScreen(
     var noteDraft by remember { mutableStateOf<NoteDraft?>(null) }
     var wheel by remember { mutableStateOf(0f) }
     var ctxMenu by remember { mutableStateOf<ContextMenuTarget?>(null) }
+    // Selection tracked by the page itself: Compose's SelectionContainer draws the highlight
+    // but does not expose the selected text, so the quote has to be measured from the lines.
+    var pageSelection by remember(record.id) { mutableStateOf<PageSelection?>(null) }
+    val lineBoxes = remember(record.id) { mutableStateMapOf<Int, LineBox>() }
+    var pageOrigin by remember(record.id) { mutableStateOf(Offset.Zero) }
 
     LaunchedEffect(record.id) {
         state.markOpened(record)
@@ -274,6 +284,30 @@ fun ReaderScreen(
                             Modifier
                                 .width(contentWidth)
                                 .fillMaxHeight()
+                                .onGloballyPositioned { pageOrigin = it.positionInRoot() }
+                                .pointerInput(page, pageIndex) {
+                                    // Drag over the page selects text; the range is remembered so
+                                    // "Добавить заметку" quotes exactly what was selected.
+                                    lineBoxes.clear()
+                                    awaitEachGesture {
+                                        val down = awaitFirstDown(requireUnconsumed = false)
+                                        if (down.type != PointerType.Mouse) return@awaitEachGesture
+                                        val anchor = hitTest(lineBoxes, pageOrigin + down.position)
+                                            ?: return@awaitEachGesture
+                                        pageSelection = PageSelection(anchor, anchor)
+                                        var last = anchor
+                                        while (true) {
+                                            val change = awaitPointerEvent().changes
+                                                .firstOrNull { it.id == down.id } ?: break
+                                            if (!change.pressed) break
+                                            val hit = hitTest(lineBoxes, pageOrigin + change.position)
+                                            if (hit != null && hit != last) {
+                                                last = hit
+                                                pageSelection = PageSelection(anchor, hit)
+                                            }
+                                        }
+                                    }
+                                }
                                 .padding(
                                     horizontal = settings.marginH.dp,
                                     vertical = settings.marginV.dp,
@@ -281,17 +315,22 @@ fun ReaderScreen(
                         ) {
                             SelectionContainer {
                                 Column(Modifier.fillMaxWidth()) {
-                                    page.lines.forEach { line ->
+                                    page.lines.forEachIndexed { lineIndex, line ->
                                         PageLineView(
                                             line = line,
+                                            lineIndex = lineIndex,
                                             settings = settings,
                                             palette = palette,
                                             density = density,
-                                            onContextMenu = { position, blockIndex, text ->
+                                            onLineBox = { box ->
+                                                if (box.index != null) lineBoxes[box.index] = box
+                                            },
+                                            onContextMenu = { position, blockIndex, fallbackText ->
+                                                val quote = quoteOf(pageSelection, page.lines).ifBlank { fallbackText }
                                                 ctxMenu = ContextMenuTarget(
                                                     position = position,
                                                     blockIndex = blockIndex,
-                                                    blockText = text.ifBlank {
+                                                    blockText = quote.ifBlank {
                                                         book?.blocks?.getOrNull(blockIndex)?.text.orEmpty()
                                                     },
                                                 )
@@ -522,9 +561,11 @@ private fun ReaderFooter(
 @Composable
 private fun PageLineView(
     line: PageLine,
+    lineIndex: Int,
     settings: ReaderSettings,
     palette: ReaderPalette,
     density: Density,
+    onLineBox: (LineBox) -> Unit,
     onContextMenu: (absolute: Offset, blockIndex: Int, text: String) -> Unit,
 ) {
     val m = metricsFor(line.kind, settings, density)
@@ -540,19 +581,27 @@ private fun PageLineView(
     }
 
     var origin by remember { mutableStateOf(Offset.Zero) }
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
 
     Text(
         text = line.text,
         style = style.copy(textAlign = alignment),
         maxLines = 1,
         softWrap = false,
+        onTextLayout = { result ->
+            layout = result
+            onLineBox(LineBox(lineIndex, line.text, origin, IntSize.Zero, result))
+        },
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = with(density) { m.leadingIndentPx.toDp() })
             .height(with(density) { m.lineHeightPx.toDp() })
             // Coordinates of the same node that reports the pointer position, so
             // origin + position is the exact window point of the click.
-            .onGloballyPositioned { origin = it.positionInRoot() }
+            .onGloballyPositioned { coords ->
+                origin = coords.positionInRoot()
+                onLineBox(LineBox(lineIndex, line.text, origin, coords.size, layout))
+            }
             // Right click: consume the press so the text does not start its own (broken for
             // popups) selection, and report where it happened.
             .onPointerEvent(PointerEventType.Press) { event ->
@@ -567,6 +616,65 @@ private fun PageLineView(
     if (line.isLastOfBlock && m.spaceAfterPx > 0f) {
         Spacer(Modifier.height(with(density) { m.spaceAfterPx.toDp() }))
     }
+}
+
+
+/** Geometry of one rendered line, in window coordinates. */
+private data class LineBox(
+    val index: Int,
+    val text: String,
+    val topLeft: Offset,
+    val size: IntSize,
+    val layout: TextLayoutResult?,
+)
+
+/** A point inside a line: which line and which character offset. */
+internal data class Hit(val line: Int, val offset: Int)
+
+/** Anchor and end of a mouse selection across the page. */
+internal data class PageSelection(val anchor: Hit, val end: Hit)
+
+/** Finds the line under a window point and the character offset inside it. */
+private fun hitTest(boxes: Map<Int, LineBox>, point: Offset): Hit? {
+    val candidates = boxes.values.filter { box ->
+        val height = if (box.size.height > 0) box.size.height else 1
+        point.y >= box.topLeft.y - 2f && point.y <= box.topLeft.y + height + 2f
+    }
+    val box = candidates.minByOrNull { kotlin.math.abs(it.topLeft.y + it.size.height / 2f - point.y) }
+        ?: return null
+    val layout = box.layout ?: return Hit(box.index, 0)
+    val local = Offset(
+        (point.x - box.topLeft.x).coerceAtLeast(0f),
+        (point.y - box.topLeft.y).coerceAtLeast(0f),
+    )
+    val offset = layout.getOffsetForPosition(local).coerceIn(0, box.text.length)
+    return Hit(box.index, offset)
+}
+
+/** Text covered by the selection, lines joined with a space. Empty when nothing is selected. */
+internal fun quoteOf(selection: PageSelection?, lines: List<PageLine>): String {
+    selection ?: return ""
+    val first = selection.anchor
+    val second = selection.end
+    val (from, to) = if (first.line < second.line || (first.line == second.line && first.offset <= second.offset)) {
+        first to second
+    } else {
+        second to first
+    }
+    if (from.line == to.line && from.offset == to.offset) return ""
+
+    val builder = StringBuilder()
+    for (i in from.line..to.line) {
+        val text = lines.getOrNull(i)?.text ?: continue
+        val start = if (i == from.line) from.offset.coerceIn(0, text.length) else 0
+        val end = if (i == to.line) to.offset.coerceIn(0, text.length) else text.length
+        if (end <= start) continue
+        val part = text.substring(start, end).trim()
+        if (part.isEmpty()) continue
+        if (builder.isNotEmpty()) builder.append(' ')
+        builder.append(part)
+    }
+    return builder.toString().trim()
 }
 
 /** Paragraph menu opened by a right click: window position and the paragraph it acts on. */

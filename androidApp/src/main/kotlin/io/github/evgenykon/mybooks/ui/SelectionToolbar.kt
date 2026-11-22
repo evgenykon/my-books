@@ -9,6 +9,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -40,6 +43,8 @@ fun ReaderSelectionHost(
 ) {
     var menu by remember { mutableStateOf<SelectionMenu?>(null) }
     val clipboard = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
+    val withQuote: (String) -> Unit = { text -> if (text.isNotEmpty()) onAddNote(text) }
 
     val toolbar = remember {
         object : TextToolbar {
@@ -90,10 +95,22 @@ fun ReaderSelectionHost(
                         Text("Копировать")
                     }
                     TextButton(onClick = {
-                        current.onCopy?.invoke()
-                        val quote = clipboard.getText()?.text.orEmpty().trim()
+                        val copy = current.onCopy
                         menu = null
-                        if (quote.isNotEmpty()) onAddNote(quote)
+                        if (copy != null) {
+                            copy()
+                            // The copy request is asynchronous: wait for the clipboard to hold
+                            // the selection instead of grabbing a stale or empty value.
+                            scope.launch {
+                                var quote = ""
+                                repeat(6) {
+                                    quote = clipboard.getText()?.text.orEmpty().trim()
+                                    if (quote.isNotEmpty()) return@launch withQuote(quote)
+                                    delay(50)
+                                }
+                                withQuote(quote)
+                            }
+                        }
                     }) {
                         Text("В заметку")
                     }

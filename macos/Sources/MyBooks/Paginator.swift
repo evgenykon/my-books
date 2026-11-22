@@ -24,10 +24,30 @@ enum Paginator {
 
     // MARK: - Fonts
 
-    static let familyNames = ["PT Serif", "Charter", "Iowan Old Style", "Georgia", "Helvetica Neue", "Menlo"]
+    /// Index -> PostScript name, kept in sync with the Windows/Android lists. The first three
+    /// entries are the system families (serif, sans, mono); the rest are bundled Google Fonts
+    /// (Spectral, PT Serif, Alegreya, Merriweather) registered through ATSApplicationFontsPath.
+    static let familyNames = [
+        "", "", "",
+        "Spectral-Regular", "PTSerif-Regular", "Alegreya-Regular", "Merriweather-Regular",
+    ]
+
+    /// Labels for the font picker (the first three mirror the Compose clients).
+    static let familyLabels = [
+        "С засечками", "Без засечек", "Моно",
+        "Spectral", "PT Serif", "Alegreya", "Merriweather",
+    ]
 
     static func font(family: Int, size: CGFloat, weight: NSFont.Weight) -> NSFont {
         let index = min(max(family, 0), familyNames.count - 1)
+        if index < 3 {
+            // 0 serif, 1 sans, 2 mono — system families.
+            if index == 2 { return NSFont.monospacedSystemFont(ofSize: size, weight: weight) }
+            let base = NSFont.systemFont(ofSize: size, weight: weight)
+            guard index == 0, let descriptor = base.fontDescriptor.withDesign(.serif),
+                  let serif = NSFont(descriptor: descriptor, size: size) else { return base }
+            return serif
+        }
         let name = familyNames[index]
         if let font = NSFont(name: name, size: size) {
             if weight != .regular {

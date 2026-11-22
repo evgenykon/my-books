@@ -2,10 +2,13 @@ package io.github.evgenykon.mybooks.ui
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
+import io.github.evgenykon.mybooks.R
 import io.github.evgenykon.mybooks.core.BlockKind
 import io.github.evgenykon.mybooks.data.ReaderSettings
 
@@ -26,11 +29,58 @@ val palettes = listOf(
 
 fun paletteOf(settings: ReaderSettings): ReaderPalette = palettes.getOrElse(settings.theme) { palettes[0] }
 
-val fontFamilies = listOf(FontFamily.Serif, FontFamily.SansSerif, FontFamily.Monospace)
-val fontFamilyNames = listOf("С засечками", "Без засечек", "Моно")
+/**
+ * Bundled Google Fonts (SIL OFL, subsets with Latin + Cyrillic), loaded from resources:
+ * Spectral, PT Serif, Alegreya and Merriweather. Indices 3..6 extend the list, so settings
+ * saved before the fonts existed (0..2) keep working.
+ */
+private val spectralFamily = FontFamily(
+    Font(R.font.spectral_regular, FontWeight.Normal),
+    Font(R.font.spectral_bold, FontWeight.Bold),
+    Font(R.font.spectral_italic, FontWeight.Normal, FontStyle.Italic),
+    Font(R.font.spectral_bold_italic, FontWeight.Bold, FontStyle.Italic),
+)
+private val ptSerifFamily = FontFamily(
+    Font(R.font.pt_serif_regular, FontWeight.Normal),
+    Font(R.font.pt_serif_bold, FontWeight.Bold),
+    Font(R.font.pt_serif_italic, FontWeight.Normal, FontStyle.Italic),
+    Font(R.font.pt_serif_bold_italic, FontWeight.Bold, FontStyle.Italic),
+)
+private val alegreyaFamily = FontFamily(
+    Font(R.font.alegreya_regular, FontWeight.Normal),
+    Font(R.font.alegreya_bold, FontWeight.Bold),
+    Font(R.font.alegreya_italic, FontWeight.Normal, FontStyle.Italic),
+    Font(R.font.alegreya_bold_italic, FontWeight.Bold, FontStyle.Italic),
+)
+private val merriweatherFamily = FontFamily(
+    Font(R.font.merriweather_regular, FontWeight.Normal),
+    Font(R.font.merriweather_bold, FontWeight.Bold),
+    Font(R.font.merriweather_italic, FontWeight.Normal, FontStyle.Italic),
+    Font(R.font.merriweather_bold_italic, FontWeight.Bold, FontStyle.Italic),
+)
+
+val fontFamilies = listOf(
+    FontFamily.Serif,
+    FontFamily.SansSerif,
+    FontFamily.Monospace,
+    spectralFamily,
+    ptSerifFamily,
+    alegreyaFamily,
+    merriweatherFamily,
+)
+val fontFamilyNames = listOf(
+    "С засечками",
+    "Без засечек",
+    "Моно",
+    "Spectral",
+    "PT Serif",
+    "Alegreya",
+    "Merriweather",
+)
 
 fun fontFamilyOf(settings: ReaderSettings): FontFamily =
     fontFamilies.getOrElse(settings.fontFamily) { FontFamily.Serif }
+
 
 /** Text style for a block kind, given reader settings and the active palette. */
 fun styleFor(kind: BlockKind, settings: ReaderSettings, palette: ReaderPalette): TextStyle {

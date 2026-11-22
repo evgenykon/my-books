@@ -23,6 +23,7 @@ import io.github.evgenykon.mybooks.core.TocEntry
 import io.github.evgenykon.mybooks.data.BookRecord
 import io.github.evgenykon.mybooks.data.ReaderSettings
 import io.github.evgenykon.mybooks.ui.LibraryScreen
+import io.github.evgenykon.mybooks.ui.fontFamilyNames
 import io.github.evgenykon.mybooks.ui.NotesPanel
 import io.github.evgenykon.mybooks.ui.ReaderPalette
 import io.github.evgenykon.mybooks.ui.SettingsPanel
@@ -130,7 +131,30 @@ fun main() {
         }
     }
 
+    // One page per font family, to eyeball Cyrillic in each bundled face.
+    fontFamilyNames.forEachIndexed { index, name ->
+        render(out, "font-$index-$name", 1000, 700) {
+            FontPreview(settings.copy(fontFamily = index), name)
+        }
+    }
+
     println("snapshots written to " + out.absolutePath)
+}
+
+/** A single page rendered with the given reader settings, titled with the family name. */
+@Composable
+private fun FontPreview(settings: ReaderSettings, name: String) {
+    val palette = paletteOf(settings)
+    Surface(Modifier.fillMaxSize(), color = palette.background) {
+        Column(Modifier.fillMaxSize()) {
+            Text(
+                text = name,
+                style = styleFor(BlockKind.EPIGRAPH_AUTHOR, settings, palette),
+                modifier = Modifier.padding(horizontal = 36.dp, vertical = 12.dp),
+            )
+            PageMock(settings, palette)
+        }
+    }
 }
 
 /** A page of the book with an optional side panel on the right. */
