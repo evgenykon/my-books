@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudQueue
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
@@ -35,6 +36,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -71,6 +73,11 @@ fun LibraryScreen(
     /** Vault work (create / open / sync / delete) runs in the background: show it here too. */
     vaultBusy: Boolean = false,
     vaultBusyText: String? = null,
+    /** Newer release published on GitHub, if any. */
+    updateVersion: String? = null,
+    updateProgress: Float? = null,
+    onInstallUpdate: () -> Unit = {},
+    onDismissUpdate: () -> Unit = {},
 ) {
     val snackbar = remember { SnackbarHostState() }
     var query by remember { mutableStateOf("") }
@@ -154,6 +161,15 @@ fun LibraryScreen(
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+            if (updateVersion != null) {
+                UpdateBanner(
+                    version = updateVersion,
+                    progress = updateProgress,
+                    onInstall = onInstallUpdate,
+                    onDismiss = onDismissUpdate,
+                )
+            }
 
             if (vaultBusy) {
                 VaultBusyBar(vaultBusyText)
@@ -320,6 +336,46 @@ private fun VaultBusyBar(text: String?) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+/** Shows a published release with a one-click install (the MSI replaces the app in place). */
+@Composable
+private fun UpdateBanner(
+    version: String,
+    progress: Float?,
+    onInstall: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Filled.Download, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = if (progress != null) {
+                    "Скачиваю обновление ${version}… ${(progress * 100).toInt()}%"
+                } else {
+                    "Доступно обновление ${version}"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+            )
+            if (progress == null) {
+                TextButton(onClick = onInstall) { Text("Обновить") }
+                TextButton(onClick = onDismiss) { Text("Позже") }
+            } else {
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.width(140.dp),
+                )
+            }
         }
     }
 }

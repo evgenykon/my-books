@@ -8,6 +8,9 @@ import io.github.evgenykon.mybooks.data.LibraryRepository
 import io.github.evgenykon.mybooks.data.ReaderSettings
 import io.github.evgenykon.mybooks.data.VaultManager
 import io.github.evgenykon.mybooks.secret.WindowsSecrets
+import io.github.evgenykon.mybooks.update.AppUpdate
+import io.github.evgenykon.mybooks.update.UpdateChecker
+import io.github.evgenykon.mybooks.update.UpdateInstaller
 import io.github.evgenykon.mybooks.util.AppLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,6 +21,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlin.system.exitProcess
 import java.util.UUID
 
 /**
@@ -50,6 +54,55 @@ class AppState(val repo: LibraryRepository) {
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
+
+    private val _update = MutableStateFlow<AppUpdate?>(null)
+    val update: StateFlow<AppUpdate?> = _update.asStateFlow()
+
+    private val _updateProgress = MutableStateFlow<Float?>(null)
+    val updateProgress: StateFlow<Float?> = _updateProgress.asStateFlow()
+
+    /** Looks for a newer release; silent = worth doing on start, no message when up to date. */
+    fun checkForUpdates(silent: Boolean = false) {
+        scope.launch {
+            val found = withContext(Dispatchers.IO) { UpdateChecker.check() }
+            AppLog.info(
+                "update check: current=${UpdateChecker.currentVersion} latest=${found?.version ?: "none"}",
+            )
+            _update.value = found
+            if (found == null && !silent) {
+                showMessage("Установлена последняя версия ${UpdateChecker.currentVersion}")
+            }
+        }
+    }
+
+    fun dismissUpdate() {
+        _update.value = null
+    }
+
+    /** Downloads the new MSI and lets a script install it after this process exits. */
+    fun installUpdate() {
+        val found = _update.value ?: return
+        scope.launch {
+            _updateProgress.value = 0f
+            try {
+                val msi = withContext(Dispatchers.IO) {
+                    UpdateInstaller.download(found) { progress -> _updateProgress.value = progress }
+                }
+                _updateProgress.value = null
+                val pid = ProcessHandle.current().pid()
+                val started = withContext(Dispatchers.IO) { UpdateInstaller.launchInstaller(msi, pid) }
+                if (started) {
+                    exitProcess(0)
+                } else {
+                    showMessage("Не удалось запустить установщик")
+                }
+            } catch (e: Throwable) {
+                _updateProgress.value = null
+                AppLog.error("update failed", e)
+                showMessage("Не удалось скачать обновление: ${e.message}")
+            }
+        }
+    }
 
     fun consumeMessage() {
         _message.value = null

@@ -46,6 +46,7 @@ fun main(args: Array<String>) {
     if (FileAssociation.supported) {
         AppLog.info("fb2 association registered=${FileAssociation.ensureRegistered()}")
     }
+    AppLog.info("app version ${io.github.evgenykon.mybooks.update.UpdateChecker.currentVersion}")
 
     val state = AppState(repo)
 
@@ -63,6 +64,8 @@ fun main(args: Array<String>) {
         val importing by state.importing.collectAsState()
         val message by state.message.collectAsState()
         val vaultState by state.vault.state.collectAsState()
+        val update by state.update.collectAsState()
+        val updateProgress by state.updateProgress.collectAsState()
 
         val openBook = books.firstOrNull { it.id == openBookId }
         val windowTitle = openBook?.let { "${it.title} — My Books" } ?: "My Books"
@@ -113,6 +116,11 @@ fun main(args: Array<String>) {
                 }
                 Menu("Помощь", mnemonic = 'П') {
                     Item(
+                        "Проверить обновления…",
+                        onClick = { state.checkForUpdates() },
+                    )
+                    Separator()
+                    Item(
                         "Открыть папку с логами",
                         onClick = {
                             val dir = AppLog.directory ?: return@Item
@@ -133,6 +141,8 @@ fun main(args: Array<String>) {
             }
 
             // A book passed on the command line (file association / "Open with").
+            LaunchedEffect(Unit) { state.checkForUpdates(silent = true) }
+
             LaunchedEffect(Unit) {
                 val path = args.firstOrNull() ?: return@LaunchedEffect
                 val file = File(path)
@@ -211,6 +221,10 @@ fun main(args: Array<String>) {
                         activeVault = vaultState.active,
                         vaultBusy = vaultState.busy,
                         vaultBusyText = vaultState.busyText,
+                        updateVersion = update?.version,
+                        updateProgress = updateProgress,
+                        onInstallUpdate = state::installUpdate,
+                        onDismissUpdate = state::dismissUpdate,
                     )
                 } else {
                     ReaderScreen(

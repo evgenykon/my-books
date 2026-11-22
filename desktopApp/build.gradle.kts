@@ -47,7 +47,10 @@ compose.desktop {
             packageName = "MyBooks"
             // MSI/EXE packaging requires a major version of 1 or higher; CI passes a
             // monotonically growing one, otherwise Windows refuses to upgrade in place.
-            packageVersion = providers.gradleProperty("appVersion").getOrElse("1.0.0")
+            // Single source of truth: version.txt. Windows Installer only treats the MSI as an
+            // upgrade when ProductVersion grows, and it requires major >= 1, so 0.4.6 -> 1.0.6.
+            val appVersion = rootProject.file("version.txt").readText().trim()
+            packageVersion = "1.0." + appVersion.substringAfterLast('.')
             // WiX (MSI packaging) only accepts ASCII metadata, so keep these two lines Latin.
             description = "FB2 reader for Windows"
             vendor = "Evgeny Konoplev"
