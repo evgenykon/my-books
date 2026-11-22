@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Shared
 
 /// Renders one page as a stack of lines, each with an explicit frame height, so the
 /// line-height setting is applied by us and does not depend on SwiftUI text metrics.
@@ -23,12 +24,9 @@ struct PageSlicesView: View {
         for note in footnotesByBlock[line.blockIndex] ?? [] {
             let start = max(note.start, from) - from
             let end = min(note.end, to) - from
-            guard end > start,
-                  let lower = attributed.index(attributed.startIndex, offsetByCharacters: start,
-                                               limitedBy: attributed.endIndex),
-                  let upper = attributed.index(attributed.startIndex, offsetByCharacters: end,
-                                               limitedBy: attributed.endIndex)
-            else { continue }
+            guard end > start else { continue }
+            let lower = attributed.index(attributed.startIndex, offsetByCharacters: start)
+            let upper = attributed.index(attributed.startIndex, offsetByCharacters: end)
             attributed[lower..<upper].foregroundColor = accent
         }
 
@@ -36,12 +34,9 @@ struct PageSlicesView: View {
         for range in quoteRangesByBlock[line.blockIndex] ?? [] {
             let start = max(range.lowerBound, from) - from
             let end = min(range.upperBound, to - 1) - from
-            guard end > start,
-                  let lower = attributed.index(attributed.startIndex, offsetByCharacters: start,
-                                               limitedBy: attributed.endIndex),
-                  let upper = attributed.index(attributed.startIndex, offsetByCharacters: end + 1,
-                                               limitedBy: attributed.endIndex)
-            else { continue }
+            guard end > start else { continue }
+            let lower = attributed.index(attributed.startIndex, offsetByCharacters: start)
+            let upper = attributed.index(attributed.startIndex, offsetByCharacters: end + 1)
             attributed[lower..<upper].underlineStyle = underline
         }
         return attributed
