@@ -11,6 +11,8 @@ struct PageLine: Identifiable {
     let text: String
     let isFirstOfBlock: Bool
     let isLastOfBlock: Bool
+    /// Offset of `text` inside the block text — where footnote markers sit.
+    var startInBlock: Int = 0
 }
 
 struct ReaderPage: Identifiable {
@@ -194,17 +196,19 @@ enum Paginator {
             let ctLines = (CTFrameGetLines(frame) as? [CTLine]) ?? []
             let source = attr.string as NSString
 
-            var blockLines: [String] = []
+            let bodyOffset = attr.string.count - text.count
+            var blockLines: [(String, Int)] = []
             for ctLine in ctLines {
                 let range = CTLineGetStringRange(ctLine)
                 guard range.length > 0 else { continue }
                 let piece = source.substring(with: NSRange(location: range.location, length: range.length))
                 let trimmed = piece.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty { blockLines.append(trimmed) }
+                if !trimmed.isEmpty { blockLines.append((trimmed, range.location - bodyOffset)) }
             }
-            if blockLines.isEmpty { blockLines = [text] }
+            if blockLines.isEmpty { blockLines = [(text, 0)] }
 
-            for (index, lineText) in blockLines.enumerated() {
+            for (index, entry) in blockLines.enumerated() {
+                let lineText = entry.0
                 if used + m.lineHeight > height { flush() }
                 lines.append(
                     PageLine(
@@ -212,7 +216,8 @@ enum Paginator {
                         kind: kind,
                         text: lineText,
                         isFirstOfBlock: index == 0,
-                        isLastOfBlock: index == blockLines.count - 1
+                        isLastOfBlock: index == blockLines.count - 1,
+                        startInBlock: max(0, min(entry.1, text.count))
                     )
                 )
                 used += m.lineHeight

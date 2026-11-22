@@ -262,7 +262,8 @@ object Fb2Parser {
         val size: Int get() = blocks.size
 
         fun anchorAt(id: String, index: Int) {
-            noteAnchors.putIfAbsent(id.removePrefix("#"), index)
+            val key = id.removePrefix("#")
+            if (!noteAnchors.containsKey(key)) noteAnchors[key] = index
         }
 
         fun anchors(): Map<String, Int> = noteAnchors.toMap()
@@ -278,7 +279,10 @@ object Fb2Parser {
             }
             val index = add(kind, text)
             toc.add(TocEntry(text, index, level.coerceIn(1, 3)))
-            if (id != null) noteAnchors.putIfAbsent(id.removePrefix("#"), index)
+            // putIfAbsent is JVM-only: Kotlin/Native has no such method on MutableMap.
+            if (id != null && !noteAnchors.containsKey(id.removePrefix("#"))) {
+                noteAnchors[id.removePrefix("#")] = index
+            }
             else {
                 // A note section without a title is still reachable by its own id; the caller
                 // registers it right after the first block of the section.

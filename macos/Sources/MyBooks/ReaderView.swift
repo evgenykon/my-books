@@ -209,11 +209,80 @@ struct ReaderView: View {
         updatePercent()
     }
 
+    /// Block index -> its text, for the decorations.
+    private var blockTexts: [Int: String] {
+        guard let book else { return [:] }
+        var map: [Int: String] = [:]
+        for block in book.blocks { map[Int(block.index)] = block.text }
+        return map
+    }
+
+    private var footnotesByBlock: [Int: [Footnote]] {
+        guard let book else { return [:] }
+        var map: [Int: [Footnote]] = [:]
+        for block in book.blocks where !block.footnotes.isEmpty {
+            map[Int(block.index)] = block.footnotes
+        }
+        return map
+    }
+
+    /// Fragments already quoted in a note, so they can be underlined on the page.
+    private var quoteRangesByBlock: [Int: [Range<Int>]] {
+        var map: [Int: [Range<Int>]] = [:]
+        for note in store.notes(for: record.id) {
+            let index = Int(note.blockIndex)
+            guard let text = blockTexts[index], let range = Self.quoteRange(in: text, quote: note.quote)
+            else { continue }
+            map[index, default: []].append(range)
+        }
+        return map
+    }
+
+    /// Same rule as the Compose clients: exact match first, then ignoring repeated whitespace.
+    static func quoteRange(in text: String, quote: String) -> Range<Int>? {
+        let trimmed = quote.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if let range = text.range(of: trimmed) {
+            let start = text.distance(from: text.startIndex, to: range.lowerBound)
+            let end = text.distance(from: text.startIndex, to: range.upperBound)
+            return start..<end
+        }
+
+        let chars = Array(text)
+        var normalized: [Character] = []
+        var positions: [Int] = []
+        var previousSpace = true
+        for (i, ch) in chars.enumerated() {
+            if ch == " " || ch == "\t" || ch == "\n" || ch == "\r" {
+                if !previousSpace {
+                    normalized.append(" ")
+                    positions.append(i)
+                    previousSpace = true
+                }
+            } else {
+                normalized.append(ch)
+                positions.append(i)
+                previousSpace = false
+            }
+        }
+        let needle = Array(trimmed.split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" || $0 == "\r" }).joined(separator: " "))
+        guard needle.count <= normalized.count else { return nil }
+        for start in 0...(normalized.count - needle.count) {
+            if Array(normalized[start..<(start + needle.count)]) == needle {
+                return positions[start]..<(positions[start + needle.count - 1] + 1)
+            }
+        }
+        return nil
+    }
+
     private var pageContent: some View {
         let page = pages[safe: pageIndex]
         return PageSlicesView(
             lines: page?.lines ?? [],
             settings: settings,
+            blockTexts: blockTexts,
+            footnotesByBlock: footnotesByBlock,
+            quoteRangesByBlock: quoteRangesByBlock,
             onNote: { line in
                 noteDraft = NoteDraft(blockIndex: line.blockIndex, quote: line.text)
             },

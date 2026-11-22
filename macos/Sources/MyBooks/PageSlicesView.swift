@@ -6,8 +6,46 @@ import AppKit
 struct PageSlicesView: View {
     let lines: [PageLine]
     let settings: ReaderSettings
+    /// Book and notes are only needed to decorate the text: markers of footnotes get the accent
+    /// colour, fragments already quoted in a note get a dotted underline.
+    var blockTexts: [Int: String] = [:]
+    var footnotesByBlock: [Int: [Footnote]] = [:]
+    var quoteRangesByBlock: [Int: [Range<Int>]] = [:]
     var onNote: (PageLine) -> Void = { _ in }
     var onCopy: (PageLine) -> Void = { _ in }
+
+    private func attributed(_ line: PageLine) -> AttributedString {
+        let accent = Color(nsColor: NSColor(hex: palette.accent))
+        let from = line.startInBlock
+        let to = from + line.text.count
+        var attributed = AttributedString(line.text)
+
+        for note in footnotesByBlock[line.blockIndex] ?? [] {
+            let start = max(note.start, from) - from
+            let end = min(note.end, to) - from
+            guard end > start,
+                  let lower = attributed.index(attributed.startIndex, offsetByCharacters: start,
+                                               limitedBy: attributed.endIndex),
+                  let upper = attributed.index(attributed.startIndex, offsetByCharacters: end,
+                                               limitedBy: attributed.endIndex)
+            else { continue }
+            attributed[lower..<upper].foregroundColor = accent
+        }
+
+        let underline = Text.LineStyle(pattern: .dot, color: accent)
+        for range in quoteRangesByBlock[line.blockIndex] ?? [] {
+            let start = max(range.lowerBound, from) - from
+            let end = min(range.upperBound, to - 1) - from
+            guard end > start,
+                  let lower = attributed.index(attributed.startIndex, offsetByCharacters: start,
+                                               limitedBy: attributed.endIndex),
+                  let upper = attributed.index(attributed.startIndex, offsetByCharacters: end + 1,
+                                               limitedBy: attributed.endIndex)
+            else { continue }
+            attributed[lower..<upper].underlineStyle = underline
+        }
+        return attributed
+    }
 
     private var palette: ReaderPalette { ReaderPalette.of(settings) }
 
@@ -32,7 +70,7 @@ struct PageSlicesView: View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(lines) { line in
                 let m = Paginator.metrics(kind: line.kind, settings: settings)
-                Text(line.text)
+                Text(attributed(line))
                     .font(Font(m.font))
                     .foregroundStyle(color(for: line.kind))
                     .lineLimit(1)
