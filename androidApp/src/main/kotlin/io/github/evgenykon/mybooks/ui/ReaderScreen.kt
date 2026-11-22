@@ -39,12 +39,18 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.evgenykon.mybooks.core.Footnote
 import io.github.evgenykon.mybooks.core.BlockKind
 import io.github.evgenykon.mybooks.core.Book
 import io.github.evgenykon.mybooks.core.BookNote
@@ -83,6 +89,8 @@ fun ReaderScreen(
     var showNotes by remember { mutableStateOf(false) }
     var pendingQuote by remember { mutableStateOf<String?>(null) }
     var pendingBlock by remember { mutableStateOf(0) }
+    var footnote by remember { mutableStateOf<FootnotePopup?>(null) }
+    var jumpTarget by remember { mutableStateOf<Int?>(null) }
     // Height of the toolbar above the page. The pagination budget must exclude it: without
     // that the last lines of every page are laid out below the visible area and disappear.
     var headerHeightPx by remember { mutableStateOf(0) }
@@ -141,6 +149,13 @@ fun ReaderScreen(
                 scope.launch { pagerState.animateScrollToPage(idx) }
             }
 
+            // Jump requested from outside this scope (a footnote popup).
+            LaunchedEffect(jumpTarget) {
+                val target = jumpTarget ?: return@LaunchedEffect
+                jumpToBlock(target)
+                jumpTarget = null
+            }
+
             Column(Modifier.fillMaxSize()) {
                 val currentPage = pages.getOrNull(pageIndex)
                 val percent = book?.let { b ->
@@ -183,7 +198,14 @@ fun ReaderScreen(
                                     .padding(horizontal = settings.marginH.dp, vertical = settings.marginV.dp),
                             ) {
                                 current.lines.forEach { line ->
-                                    PageLineView(line, settings, palette, density)
+                                    PageLineView(
+                                        line = line,
+                                        footnotes = book?.blocks?.getOrNull(line.blockIndex)?.footnotes.orEmpty(),
+                                        settings = settings,
+                                        palette = palette,
+                                        density = density,
+                                        onFootnote = { note -> footnote = popupFor(book, note) },
+                                    )
                                 }
                             }
                         }
@@ -225,6 +247,27 @@ fun ReaderScreen(
                 )
             }
         }
+    }
+
+    footnote?.let { note ->
+        AlertDialog(
+            onDismissRequest = { footnote = null },
+            title = { Text("Примечание") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(note.text, style = MaterialTheme.typography.bodyMedium)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    footnote = null
+                    jumpTarget = note.blockIndex
+                }) { Text("Перейти") }
+            },
+            dismissButton = {
+                TextButton(onClick = { footnote = null }) { Text("Закрыть") }
+            },
+        )
     }
 
     pendingQuote?.let { quote ->
@@ -321,9 +364,11 @@ private fun ReaderHeader(
 @Composable
 private fun PageLineView(
     line: PageLine,
+    footnotes: List<Footnote>,
     settings: ReaderSettings,
     palette: ReaderPalette,
     density: Density,
+    onFootnote: (Footnote) -> Unit,
 ) {
     val m = metricsFor(line.kind, settings, density)
     val style = styleFor(line.kind, settings, palette)
@@ -335,17 +380,66 @@ private fun PageLineView(
     if (line.isFirstOfBlock && m.spaceBeforePx > 0f) {
         Spacer(Modifier.height(with(density) { m.spaceBeforePx.toDp() }))
     }
+    // Footnote markers ("[1]") are accent coloured, and a tap on one opens the note.
+    val annotated = remember(line.text, footnotes, line.startInBlock, palette.accent) {
+        val builder = AnnotatedString.Builder(line.text)
+        val lineFrom = line.startInBlock
+        val lineTo = lineFrom + line.text.length
+        for (note in footnotes) {
+            val from = (note.start - lineFrom).coerceAtLeast(0)
+            val to = (note.end - lineFrom).coerceAtMost(line.text.length)
+            if (note.end <= lineFrom || note.start >= lineTo || to <= from) continue
+            builder.addStyle(SpanStyle(color = palette.accent), from, to)
+        }
+        builder.toAnnotatedString()
+    }
+
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+
     Text(
-        text = line.text,
+        text = annotated,
         style = style.copy(textAlign = alignment),
         maxLines = 1,
         softWrap = false,
+        onTextLayout = { layout = it },
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = with(density) { m.leadingIndentPx.toDp() })
-            .height(with(density) { m.lineHeightPx.toDp() }),
+            .height(with(density) { m.lineHeightPx.toDp() })
+            .pointerInput(line.text, footnotes) {
+                detectTapGestures { point ->
+                    val result = layout ?: return@detectTapGestures
+                    val offset = result.getOffsetForPosition(point)
+                    val inBlock = line.startInBlock + offset
+                    footnotes.firstOrNull { inBlock >= it.start && inBlock <= it.end }
+                        ?.let(onFootnote)
+                }
+            },
     )
     if (line.isLastOfBlock && m.spaceAfterPx > 0f) {
         Spacer(Modifier.height(with(density) { m.spaceAfterPx.toDp() }))
     }
+}
+
+/** Note opened from a footnote marker. */
+data class FootnotePopup(val blockIndex: Int, val text: String)
+
+/** Resolves a marker to the text of the note it points at. */
+private fun popupFor(book: io.github.evgenykon.mybooks.core.Book?, note: Footnote): FootnotePopup? {
+    val loaded = book ?: return null
+    val target = loaded.noteIndex[note.targetId] ?: return null
+    val collected = StringBuilder()
+    var i = target
+    var taken = 0
+    while (i < loaded.blocks.size && taken < 2) {
+        val text = loaded.blocks[i].text
+        if (text.isNotBlank()) {
+            if (collected.isNotEmpty()) collected.append(' ')
+            collected.append(text)
+            taken++
+        }
+        i++
+        if (i - target > 3) break
+    }
+    return FootnotePopup(target, collected.toString().trim())
 }

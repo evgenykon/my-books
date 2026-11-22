@@ -47,7 +47,9 @@ object Fb2Parser {
         if (notesBody != null) {
             val notes = notesBody.childrenNamed("section").filter { it.name == "section" }
             if (notes.isNotEmpty()) {
-                builder.heading("Примечания", 1, null)
+                // The notes body usually carries its own <title>; only add a heading when it
+                // does not, otherwise "Примечания" appears twice.
+                if (notesBody.firstChild("title") == null) builder.heading("Примечания", 1, null)
                 parseBody(notesBody, builder, covers, level = 0)
             }
         }
@@ -71,6 +73,7 @@ object Fb2Parser {
             blocks = builder.build(),
             toc = builder.tocEntries(),
             coverBase64 = coverBase64,
+            noteIndex = builder.anchors(),
         )
     }
 
@@ -120,7 +123,10 @@ object Fb2Parser {
                 "title" -> parseTitle(child, builder, level)
                 "section" -> parseSection(child, builder, images, level)
                 "epigraph" -> parseEpigraph(child, builder)
-                "p" -> builder.paragraph(child.text())
+                "p" -> {
+                    val inlineText = inline(child)
+                    builder.paragraph(inlineText.text.toString(), inlineText.footnotes)
+                }
                 "subtitle" -> builder.subtitle(child.text())
                 "empty-line" -> builder.empty()
                 "image" -> builder.image(child.attr("href"))
@@ -135,6 +141,7 @@ object Fb2Parser {
     }
 
     private fun parseSection(section: XmlNode, builder: BlockBuilder, images: MutableMap<String, String>, level: Int) {
+        section.attr("id")?.let { builder.anchorAt(it, builder.size) }
         val titleNode = section.firstChild("title")
         val titleText = titleNode?.let { nodeText(it).replace("\n\n", " ").trim() }.orEmpty()
         if (titleNode != null && titleText.isNotEmpty()) {
@@ -146,7 +153,10 @@ object Fb2Parser {
                 "title" -> Unit
                 "section" -> parseSection(child, builder, images, level + 1)
                 "epigraph" -> parseEpigraph(child, builder)
-                "p" -> builder.paragraph(child.text())
+                "p" -> {
+                    val inlineText = inline(child)
+                    builder.paragraph(inlineText.text.toString(), inlineText.footnotes)
+                }
                 "subtitle" -> builder.subtitle(child.text())
                 "empty-line" -> builder.empty()
                 "image" -> builder.image(child.attr("href"))
@@ -205,8 +215,19 @@ object Fb2Parser {
         private val blocks = mutableListOf<Block>()
         private val toc = mutableListOf<TocEntry>()
 
-        private fun add(kind: BlockKind, rawText: String, href: String? = null): Int {
-            val text = rawText.replace('\u00A0', ' ').replace(Regex("[ \\t]+"), " ").trim()
+        private fun add(
+            kind: BlockKind,
+            rawText: String,
+            href: String? = null,
+            footnotes: List<Footnote> = emptyList(),
+        ): Int {
+            val (text, positions) = normalize(rawText)
+            val kept = footnotes.mapNotNull { note ->
+                val start = positions.getOrNull(note.start) ?: return@mapNotNull null
+                val last = positions.getOrNull((note.end - 1).coerceAtLeast(0)) ?: return@mapNotNull null
+                if (start < 0 || last < 0) return@mapNotNull null
+                Footnote(start, last + 1, note.targetId)
+            }.filter { it.end > it.start }
             if (kind == BlockKind.IMAGE) {
                 val index = blocks.size
                 blocks.add(Block(index, kind, "", href))
@@ -224,18 +245,30 @@ object Fb2Parser {
                 return blocks.size - 1
             }
             val index = blocks.size
-            blocks.add(Block(index, kind, text, href))
+            blocks.add(Block(index, kind, text, href, kept))
             return index
         }
 
-        fun paragraph(text: String) = add(BlockKind.PARAGRAPH, text)
+        fun paragraph(text: String, footnotes: List<Footnote> = emptyList()) =
+            add(BlockKind.PARAGRAPH, text, null, footnotes)
         fun subtitle(text: String) = add(BlockKind.SUBTITLE, text)
         fun annotation(text: String) = add(BlockKind.ANNOTATION, text)
         fun epigraph(text: String) = add(BlockKind.EPIGRAPH, text)
         fun epigraphAuthor(text: String) = add(BlockKind.EPIGRAPH_AUTHOR, text)
         fun poemLine(text: String) = add(BlockKind.POEM, text)
         fun empty() = add(BlockKind.EMPTY, "")
+
+        /** Number of blocks written so far — the index the next block will get. */
+        val size: Int get() = blocks.size
+
+        fun anchorAt(id: String, index: Int) {
+            noteAnchors.putIfAbsent(id.removePrefix("#"), index)
+        }
+
+        fun anchors(): Map<String, Int> = noteAnchors.toMap()
         fun image(href: String?) = add(BlockKind.IMAGE, "", href)
+
+        val noteAnchors = mutableMapOf<String, Int>()
 
         fun heading(text: String, level: Int, id: String?) {
             val kind = when (level) {
@@ -245,6 +278,11 @@ object Fb2Parser {
             }
             val index = add(kind, text)
             toc.add(TocEntry(text, index, level.coerceIn(1, 3)))
+            if (id != null) noteAnchors.putIfAbsent(id.removePrefix("#"), index)
+            else {
+                // A note section without a title is still reachable by its own id; the caller
+                // registers it right after the first block of the section.
+            }
         }
 
         fun build(): List<Block> {
@@ -278,4 +316,65 @@ object Fb2Parser {
             return result
         }
     }
+}
+
+/** Text of a node together with the footnote markers found in it. */
+private class InlineText {
+    val text = StringBuilder()
+    val footnotes = mutableListOf<Footnote>()
+}
+
+private fun collectInline(node: XmlNode, out: InlineText) {
+    for (child in node.children) {
+        when (child) {
+            is String -> out.text.append(child)
+            is XmlNode -> {
+                val href = child.attr("href") ?: child.attr("l:href")
+                val isNote = child.name == "a" && href != null &&
+                    (child.attr("type") == "note" || href.startsWith("#"))
+                if (isNote) {
+                    val start = out.text.length
+                    collectInline(child, out)
+                    val end = out.text.length
+                    val id = href.removePrefix("#")
+                    if (end > start && id.isNotEmpty()) {
+                        out.footnotes.add(Footnote(start, end, id))
+                    }
+                } else {
+                    collectInline(child, out)
+                }
+            }
+        }
+    }
+}
+
+/** Plain text of a node plus the footnote spans, positions valid for the raw text. */
+private fun inline(node: XmlNode): InlineText = InlineText().also { collectInline(node, it) }
+
+/**
+ * Collapses whitespace like the reader expects, while remembering where every raw character
+ * ended up, so footnote marker offsets survive the cleanup.
+ */
+private fun normalize(raw: String): Pair<String, IntArray> {
+    val out = StringBuilder()
+    val map = IntArray(raw.length) { -1 }
+    var pendingSpace = false
+    var started = false
+    for (i in raw.indices) {
+        val ch = if (raw[i] == '\u00A0') ' ' else raw[i]
+        if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') {
+            if (started) pendingSpace = true
+            continue
+        }
+        if (pendingSpace) {
+            map[i - 1] = out.length
+            out.append(' ')
+            pendingSpace = false
+        }
+        map[i] = out.length
+        out.append(ch)
+        started = true
+    }
+    // trailing space never appears because pendingSpace is only flushed before a character
+    return out.toString() to map
 }

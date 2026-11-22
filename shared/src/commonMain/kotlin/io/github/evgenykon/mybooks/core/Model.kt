@@ -30,10 +30,23 @@ data class Block(
     val kind: BlockKind,
     val text: String,
     val href: String? = null,
+    /** Footnote markers inside [text], so a tap can show what they point at. */
+    val footnotes: List<Footnote> = emptyList(),
 ) {
     /** String form of [kind], so Swift can switch on it without enum bridging. */
     val kindName: String get() = kind.name
 }
+
+/**
+ * A footnote marker inside a block: the character range it occupies in [Block.text] and the
+ * anchor it points at (`l:href="#n12"` -> "n12").
+ */
+@Serializable
+data class Footnote(
+    val start: Int,
+    val end: Int,
+    val targetId: String,
+)
 
 /** Entry of the table of contents; [blockIndex] is where the heading lives. */
 @Serializable
@@ -52,6 +65,8 @@ data class Book(
     val blocks: List<Block>,
     val toc: List<TocEntry>,
     val coverBase64: String? = null,
+    /** Anchor id of a note -> the block where its text lives. */
+    val noteIndex: Map<String, Int> = emptyMap(),
 ) {
     val authorLine: String
         get() = if (authors.isEmpty()) "Неизвестный автор" else authors.joinToString(", ")

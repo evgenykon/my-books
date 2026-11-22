@@ -40,6 +40,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -80,12 +81,15 @@ import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.evgenykon.mybooks.core.Footnote
 import io.github.evgenykon.mybooks.core.BlockKind
 import io.github.evgenykon.mybooks.core.Book
 import io.github.evgenykon.mybooks.core.BookNote
@@ -135,6 +139,7 @@ fun ReaderScreen(
     var pageSelection by remember(record.id) { mutableStateOf<PageSelection?>(null) }
     val lineBoxes = remember(record.id) { mutableStateMapOf<Int, LineBox>() }
     var pageOrigin by remember(record.id) { mutableStateOf(Offset.Zero) }
+    var footnote by remember(record.id) { mutableStateOf<FootnotePopup?>(null) }
 
     LaunchedEffect(record.id) {
         state.markOpened(record)
@@ -296,6 +301,7 @@ fun ReaderScreen(
                                             ?: return@awaitEachGesture
                                         pageSelection = PageSelection(anchor, anchor)
                                         var last = anchor
+                                        var moved = false
                                         while (true) {
                                             val change = awaitPointerEvent().changes
                                                 .firstOrNull { it.id == down.id } ?: break
@@ -303,7 +309,17 @@ fun ReaderScreen(
                                             val hit = hitTest(lineBoxes, pageOrigin + change.position)
                                             if (hit != null && hit != last) {
                                                 last = hit
+                                                moved = true
                                                 pageSelection = PageSelection(anchor, hit)
+                                            }
+                                        }
+                                        if (!moved) {
+                                            // A click on a footnote marker opens its note.
+                                            val loaded = book ?: return@awaitEachGesture
+                                            val target = footnoteAt(loaded, page.lines, anchor)
+                                            if (target != null) {
+                                                footnote = target
+                                                pageSelection = null
                                             }
                                         }
                                     }
@@ -319,6 +335,8 @@ fun ReaderScreen(
                                         PageLineView(
                                             line = line,
                                             lineIndex = lineIndex,
+                                            footnotes = book?.blocks?.getOrNull(line.blockIndex)?.footnotes.orEmpty(),
+                                            accent = palette.accent,
                                             settings = settings,
                                             palette = palette,
                                             density = density,
@@ -345,6 +363,18 @@ fun ReaderScreen(
                     // Kept outside SelectionContainer: a popup inside it inherits the
                     // selection registrar but lives in another window, which crashed
                     // coordinate mapping ("layouts are not part of the same hierarchy").
+                    footnote?.let { note ->
+                        FootnotePopup(
+                            note = note,
+                            palette = palette,
+                            onJump = {
+                                goTo(pageIndexOfBlock(pages ?: emptyList(), note.blockIndex))
+                                footnote = null
+                            },
+                            onDismiss = { footnote = null },
+                        )
+                    }
+
                     ctxMenu?.let { menu ->
                         ReaderContextMenu(
                             target = menu,
@@ -562,6 +592,8 @@ private fun ReaderFooter(
 private fun PageLineView(
     line: PageLine,
     lineIndex: Int,
+    footnotes: List<Footnote>,
+    accent: Color,
     settings: ReaderSettings,
     palette: ReaderPalette,
     density: Density,
@@ -583,8 +615,22 @@ private fun PageLineView(
     var origin by remember { mutableStateOf(Offset.Zero) }
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
 
+    // Footnote markers ("[1]") are accent coloured so they read as something to tap.
+    val annotated = remember(line.text, footnotes, line.startInBlock, accent) {
+        val builder = AnnotatedString.Builder(line.text)
+        val lineFrom = line.startInBlock
+        val lineTo = lineFrom + line.text.length
+        for (note in footnotes) {
+            val from = (note.start - lineFrom).coerceAtLeast(0)
+            val to = (note.end - lineFrom).coerceAtMost(line.text.length)
+            if (note.end <= lineFrom || note.start >= lineTo || to <= from) continue
+            builder.addStyle(SpanStyle(color = accent), from, to)
+        }
+        builder.toAnnotatedString()
+    }
+
     Text(
-        text = line.text,
+        text = annotated,
         style = style.copy(textAlign = alignment),
         maxLines = 1,
         softWrap = false,
@@ -675,6 +721,67 @@ internal fun quoteOf(selection: PageSelection?, lines: List<PageLine>): String {
         builder.append(part)
     }
     return builder.toString().trim()
+}
+
+
+/** Note shown in the footnote popup: where it lives and what it says. */
+internal data class FootnotePopup(val blockIndex: Int, val text: String)
+
+/** Footnote marker under a click, if any. */
+internal fun footnoteAt(book: Book, lines: List<PageLine>, hit: Hit): FootnotePopup? {
+    val line = lines.getOrNull(hit.line) ?: return null
+    val block = book.blocks.getOrNull(line.blockIndex) ?: return null
+    val offset = line.startInBlock + hit.offset
+    val note = block.footnotes.firstOrNull { offset >= it.start && offset <= it.end } ?: return null
+    val target = book.noteIndex[note.targetId] ?: return null
+
+    // A note section starts with its number; take it and the paragraph that follows.
+    val collected = StringBuilder()
+    var i = target
+    var taken = 0
+    while (i < book.blocks.size && taken < 2) {
+        val text = book.blocks[i].text
+        if (text.isNotBlank()) {
+            if (collected.isNotEmpty()) collected.append(' ')
+            collected.append(text)
+            taken++
+        }
+        i++
+        if (i - target > 3) break
+    }
+    return FootnotePopup(target, collected.toString().trim())
+}
+
+/** Small card with the note text, anchored to the page corner. */
+@Composable
+private fun FootnotePopup(
+    note: FootnotePopup,
+    palette: ReaderPalette,
+    onJump: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Popup(alignment = Alignment.BottomCenter, onDismissRequest = onDismiss) {
+        Surface(
+            color = palette.surface,
+            shape = RoundedCornerShape(10.dp),
+            shadowElevation = 12.dp,
+            modifier = Modifier.padding(16.dp).widthIn(max = 460.dp),
+        ) {
+            Column(Modifier.padding(14.dp)) {
+                Text(
+                    text = note.text,
+                    style = TextStyle(fontSize = 13.sp, lineHeight = 19.sp, color = palette.text),
+                )
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(onClick = onJump) { Text("Перейти") }
+                    TextButton(onClick = onDismiss) { Text("Закрыть") }
+                }
+            }
+        }
+    }
 }
 
 /** Paragraph menu opened by a right click: window position and the paragraph it acts on. */

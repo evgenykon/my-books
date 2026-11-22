@@ -17,6 +17,8 @@ data class PageLine(
     val text: String,
     val isFirstOfBlock: Boolean,
     val isLastOfBlock: Boolean,
+    /** Offset of [text] inside the block text: needed to place footnote markers. */
+    val startInBlock: Int = 0,
 )
 
 data class ReaderPage(val lines: List<PageLine>) {
@@ -132,16 +134,17 @@ fun paginate(
             softWrap = true,
         )
 
-        val blockLines = ArrayList<String>()
+        val bodyOffset = body.length - text.length
+        val blockLines = ArrayList<Pair<String, Int>>()
         for (i in 0 until layout.lineCount) {
             val start = layout.getLineStart(i)
             val end = layout.getLineEnd(i)
             val piece = body.substring(start, end).trimEnd()
-            if (piece.isNotEmpty()) blockLines.add(piece)
+            if (piece.isNotEmpty()) blockLines.add(piece to (start - bodyOffset))
         }
-        if (blockLines.isEmpty()) blockLines.add(text)
+        if (blockLines.isEmpty()) blockLines.add(text to 0)
 
-        blockLines.forEachIndexed { index, lineText ->
+        blockLines.forEachIndexed { index, (lineText, lineStart) ->
             if (used + m.lineHeightPx > pageHeightPx) flush()
             lines.add(
                 PageLine(
@@ -150,6 +153,7 @@ fun paginate(
                     text = lineText,
                     isFirstOfBlock = index == 0,
                     isLastOfBlock = index == blockLines.lastIndex,
+                    startInBlock = lineStart.coerceIn(0, text.length),
                 )
             )
             used += m.lineHeightPx
