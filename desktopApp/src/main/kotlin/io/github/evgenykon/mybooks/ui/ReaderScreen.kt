@@ -55,6 +55,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -67,6 +68,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -140,6 +142,13 @@ fun ReaderScreen(
     val lineBoxes = remember(record.id) { mutableStateMapOf<Int, LineBox>() }
     var pageOrigin by remember(record.id) { mutableStateOf(Offset.Zero) }
     var footnote by remember(record.id) { mutableStateOf<FootnotePopup?>(null) }
+    // Ranges of text already quoted in a note, per block, to underline them on the page.
+    val quoteRanges = remember(notes, book) {
+        notes.groupBy { it.blockIndex }.mapValues { (blockIndex, list) ->
+            val text = book?.blocks?.getOrNull(blockIndex)?.text ?: return@mapValues emptyList()
+            list.mapNotNull { note -> quoteRangeIn(text, note.quote) }
+        }
+    }
 
     LaunchedEffect(record.id) {
         state.markOpened(record)
@@ -336,6 +345,7 @@ fun ReaderScreen(
                                             line = line,
                                             lineIndex = lineIndex,
                                             footnotes = book?.blocks?.getOrNull(line.blockIndex)?.footnotes.orEmpty(),
+                                            quotes = quoteRanges[line.blockIndex].orEmpty(),
                                             accent = palette.accent,
                                             settings = settings,
                                             palette = palette,
@@ -593,6 +603,7 @@ private fun PageLineView(
     line: PageLine,
     lineIndex: Int,
     footnotes: List<Footnote>,
+    quotes: List<IntRange>,
     accent: Color,
     settings: ReaderSettings,
     palette: ReaderPalette,
@@ -647,6 +658,30 @@ private fun PageLineView(
             .onGloballyPositioned { coords ->
                 origin = coords.positionInRoot()
                 onLineBox(LineBox(lineIndex, line.text, origin, coords.size, layout))
+            }
+            // Quoted text gets a dotted underline: a solid one reads like a link, and a
+            // background box fights with the selection highlight.
+            .drawBehind {
+                val result = layout ?: return@drawBehind
+                val from = line.startInBlock
+                val to = from + line.text.length
+                for (range in quotes) {
+                    val start = maxOf(range.first, from) - from
+                    val end = minOf(range.last, to - 1) - from
+                    if (end <= start) continue
+                    val y = result.getLineBottom(0) - 2.dp.toPx()
+                    val first = result.getBoundingBox(start.coerceAtMost(line.text.length - 1))
+                    val last = result.getBoundingBox(end.coerceAtMost(line.text.length - 1))
+                    val x1 = first.left
+                    val x2 = last.right
+                    drawLine(
+                        color = accent.copy(alpha = 0.65f),
+                        start = Offset(x1, y),
+                        end = Offset(x2, y),
+                        strokeWidth = 1.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(2.dp.toPx(), 3.dp.toPx())),
+                    )
+                }
             }
             // Right click: consume the press so the text does not start its own (broken for
             // popups) selection, and report where it happened.

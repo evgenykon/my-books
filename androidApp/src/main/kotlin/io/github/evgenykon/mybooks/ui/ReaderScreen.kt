@@ -34,6 +34,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
@@ -90,6 +93,13 @@ fun ReaderScreen(
     var pendingQuote by remember { mutableStateOf<String?>(null) }
     var pendingBlock by remember { mutableStateOf(0) }
     var footnote by remember { mutableStateOf<FootnotePopup?>(null) }
+    // Text already quoted in a note is underlined on the page.
+    val quoteRanges = remember(notes, book) {
+        notes.groupBy { it.blockIndex }.mapValues { (blockIndex, list) ->
+            val text = book?.blocks?.getOrNull(blockIndex)?.text ?: return@mapValues emptyList()
+            list.mapNotNull { note -> quoteRangeIn(text, note.quote) }
+        }
+    }
     var jumpTarget by remember { mutableStateOf<Int?>(null) }
     // Height of the toolbar above the page. The pagination budget must exclude it: without
     // that the last lines of every page are laid out below the visible area and disappear.
@@ -201,6 +211,7 @@ fun ReaderScreen(
                                     PageLineView(
                                         line = line,
                                         footnotes = book?.blocks?.getOrNull(line.blockIndex)?.footnotes.orEmpty(),
+                                        quotes = quoteRanges[line.blockIndex].orEmpty(),
                                         settings = settings,
                                         palette = palette,
                                         density = density,
@@ -365,6 +376,7 @@ private fun ReaderHeader(
 private fun PageLineView(
     line: PageLine,
     footnotes: List<Footnote>,
+    quotes: List<IntRange>,
     settings: ReaderSettings,
     palette: ReaderPalette,
     density: Density,
@@ -406,6 +418,27 @@ private fun PageLineView(
             .fillMaxWidth()
             .padding(start = with(density) { m.leadingIndentPx.toDp() })
             .height(with(density) { m.lineHeightPx.toDp() })
+            // Dotted underline under text already quoted in a note.
+            .drawBehind {
+                val result = layout ?: return@drawBehind
+                val from = line.startInBlock
+                val to = from + line.text.length
+                for (range in quotes) {
+                    val start = maxOf(range.first, from) - from
+                    val end = minOf(range.last, to - 1) - from
+                    if (end <= start || line.text.isEmpty()) continue
+                    val y = result.getLineBottom(0) - 2.dp.toPx()
+                    val first = result.getBoundingBox(start.coerceAtMost(line.text.length - 1))
+                    val last = result.getBoundingBox(end.coerceAtMost(line.text.length - 1))
+                    drawLine(
+                        color = palette.accent.copy(alpha = 0.65f),
+                        start = Offset(first.left, y),
+                        end = Offset(last.right, y),
+                        strokeWidth = 1.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(2.dp.toPx(), 3.dp.toPx())),
+                    )
+                }
+            }
             .pointerInput(line.text, footnotes) {
                 detectTapGestures { point ->
                     val result = layout ?: return@detectTapGestures
