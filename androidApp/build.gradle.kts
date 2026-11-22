@@ -13,8 +13,8 @@ android {
         applicationId = "io.github.evgenykon.mybooks"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 18
-        versionName = "0.4.4"
+        versionCode = 19
+        versionName = "0.4.5"
     }
 
     // A committed personal keystore: the app is sideloaded, and in-app updates only install

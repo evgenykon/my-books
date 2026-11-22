@@ -22,8 +22,9 @@ struct PageSlicesView: View {
         var attributed = AttributedString(line.text)
 
         for note in footnotesByBlock[line.blockIndex] ?? [] {
-            let start = max(note.start, from) - from
-            let end = min(note.end, to) - from
+            // Kotlin Int bridges as Int32.
+            let start = max(Int(note.start), from) - from
+            let end = min(Int(note.end), to) - from
             guard end > start else { continue }
             let lower = attributed.index(attributed.startIndex, offsetByCharacters: start)
             let upper = attributed.index(attributed.startIndex, offsetByCharacters: end)
